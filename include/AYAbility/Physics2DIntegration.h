@@ -1,6 +1,7 @@
 #pragma once
 #include <AYAbility/EntityIntegration.h>
 #include <AYAbility/Authoring.h>
+#include <AYCombat/Physics2DArea.h>
 #include <AYPhysics/PhysicsManager.h>
 #include <AYMath/MathTypes.h>
 #include <map>
@@ -41,4 +42,10 @@ Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
 Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
     AbilitySystem& ability,ayt::physics::PhysicsManager& physics,
     const AuthoringDocument& document);
+/// Configure a source-following Box2D area once; gameplay still calls castArea(actor, skill).
+/// Selection is sampled for each current geometric candidate on every Combat Sim sweep.
+Result<void> configureAreaSkill2D(AbilitySystem& ability,ayt::entity::World& world,
+    ayt::physics::PhysicsManager& physics,Id skill,
+    ayt::combat::AreaDefinition definition,ayt::combat::AreaQuery2D query,
+    ayt::combat::AreaSelection2D selection={});
 } // namespace ayt::ability

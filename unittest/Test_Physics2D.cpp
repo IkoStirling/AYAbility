@@ -9,6 +9,7 @@
 #include <AYPhysics/PhysicsWorld2D.h>
 #include <fstream>
 #include <iterator>
+#include "Fixtures.h"
 
 using namespace ayt::ability;
 TEST_SUITE(AbilityPhysics2DTests)
@@ -228,6 +229,139 @@ TEST_CASE(periodic_hazard_expires_and_ignores_destroyed_target) {
     for(int i=0;i<4;++i)world.fixedUpdate(1.0f/60);
     CHECK_TRUE(combat->hits().activeAttacks()==0);
     CHECK_TRUE(delivery->errors().empty());
+    world.shutdown();
+    manager->shutdown();
+}
+TEST_CASE(physics_area_tracks_selected_friends_without_manual_candidate_sync) {
+    auto& world=ayt::entity::World::processWorld();
+    ayt::entity::World::setActiveWorld(nullptr);
+    world.initialize();
+    auto& registry=ayt::entity::ComponentRegistry::instance();
+    if(!registry.isSealed()) {
+        (void)ayt::entity::registerEntityCoreComponents(registry);
+        CHECK_TRUE(static_cast<bool>(ayt::entity::registerEntityPhysicsComponents(registry)));
+        CHECK_TRUE(registerAbilityGameplayComponents(registry).has_value());
+        registry.seal();
+    }
+    ayt::physics::PhysicsBackendDescriptor backend;
+    backend.kind3D=ayt::physics::BackendKind::Null;
+    backend.kind2D=ayt::physics::BackendKind::DefaultBox2D;
+    auto manager=ayt::physics::PhysicsManager::create(backend);
+    auto* ability=installAbility(world,fixture::catalog()).value();
+    auto* combat=dynamic_cast<ayt::combat::CombatSystem*>(world.findSystemByName("CombatSystem"));
+    auto* sourceEntity=world.createEntity();
+    auto* targetEntity=world.createEntity();
+    auto* otherEntity=world.createEntity();
+    auto source=world.getEntityHandle(sourceEntity->getId());
+    auto target=world.getEntityHandle(targetEntity->getId());
+    auto other=world.getEntityHandle(otherEntity->getId());
+    auto* sourceTransform=sourceEntity->addComponent<ayt::entity::Transform>();
+    sourceTransform->setPosition(0.0f,0.0f,0.0f);
+    auto schema=ayt::stats::Schema::compile({
+        {.name="health",.shape=ayt::stats::Shape::Pool,.current=100,.capacity=100},
+        {.name="mana",.shape=ayt::stats::Shape::Pool,.current=80,.capacity=80}}).value();
+    ayt::combat::ActorProfile profile{schema,{ayt::stats::statId("health")},1};
+    CHECK_TRUE(combat->configureActor(source,profile).has_value());
+    profile.team=2;
+    CHECK_TRUE(combat->configureActor(target,profile).has_value());
+    CHECK_TRUE(combat->configureActor(other,profile).has_value());
+    CHECK_TRUE(combat->setRelation(1,2,ayt::combat::Relation::Friendly).has_value());
+    CHECK_TRUE(ability->grant(source,303,1).has_value());
+    ayt::combat::AreaDefinition area;
+    area.effect.type=901;area.effect.key=901;area.effect.tags={77};
+    area.permission={ayt::combat::InteractionIntent::Beneficial,
+        ayt::combat::mask(ayt::combat::AllowedTarget::Friendly)};
+    area.permission.requireSelected=true;
+    ayt::combat::AreaQuery2D query;query.radius=1.0f;
+    auto invalid=query;invalid.radius=-1;
+    CHECK_FALSE(configureAreaSkill2D(*ability,world,*manager,303,area,invalid).has_value());
+    CHECK_FALSE(configureAreaSkill2D(*ability,world,*manager,303,area,query).has_value());
+    bool selected=true,selectOther=false;
+    CHECK_TRUE(configureAreaSkill2D(*ability,world,*manager,303,area,query,
+        [&](ayt::entity::EntityHandle candidate){
+            return (candidate==target && selected) || (candidate==other && selectOther);
+        }).has_value());
+    auto addBody=[&](ayt::entity::Entity* entity,float x) {
+        ayt::physics::RigidbodyDesc body{};body.type=ayt::physics::BodyType::Static;
+        body.position={x,0,0};
+        ayt::physics::BodyHandle handle=0;
+        CHECK_TRUE(manager->world2D()->createRigidbody(body,handle)==ayt::physics::PhysResult::Ok);
+        ayt::physics::ColliderDesc collider{};collider.body=handle;
+        collider.shape=ayt::physics::ColliderShape::Sphere;collider.radius=0.2f;
+        ayt::physics::ColliderHandle shape=0;
+        CHECK_TRUE(manager->world2D()->createCollider(collider,shape)==ayt::physics::PhysResult::Ok);
+        auto* rigid=entity->addComponent<ayt::entity::RigidBodyComponent>();
+        rigid->setPhysicsDimension(ayt::entity::RigidBodyComponent::PhysicsDimension::TwoD);
+        rigid->setBodyHandle(handle);
+        return handle;
+    };
+    addBody(sourceEntity,0.0f);
+    auto targetBody=addBody(targetEntity,0.5f);
+    ayt::physics::ColliderDesc secondShape{};
+    secondShape.body=targetBody;secondShape.shape=ayt::physics::ColliderShape::Sphere;
+    secondShape.radius=0.1f;
+    ayt::physics::ColliderHandle secondShapeHandle=0;
+    CHECK_TRUE(manager->world2D()->createCollider(secondShape,secondShapeHandle)==
+        ayt::physics::PhysResult::Ok);
+    auto otherBody=addBody(otherEntity,0.6f);
+    CHECK_TRUE(manager->stepAndWait(1.0f/60)==ayt::physics::PhysResult::Ok);
+    auto cast=ability->castArea(source,303).value();
+    world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(combat->hasTag(target,77).value());
+    CHECK_FALSE(combat->hasTag(other,77).value());
+    CHECK_INT_EQ(combat->areaMemberCount(cast.area).value(),1);
+    auto retained=combat->lastAreaSweep(cast.area).value();
+    CHECK_TRUE(retained.targets.size()==2);
+    world.fixedUpdate(1.0f/60);
+    CHECK_INT_EQ(combat->areaMemberCount(cast.area).value(),1);
+    selected=false;
+    world.fixedUpdate(1.0f/60);
+    CHECK_FALSE(combat->hasTag(target,77).value());
+    selected=true;
+    world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(combat->hasTag(target,77).value());
+    CHECK_TRUE(manager->world2D()->setRigidbodyTransform(targetBody,{3,0,0},{})==
+        ayt::physics::PhysResult::Ok);
+    CHECK_TRUE(manager->stepAndWait(1.0f/60)==ayt::physics::PhysResult::Ok);
+    world.fixedUpdate(1.0f/60);
+    CHECK_FALSE(combat->hasTag(target,77).value());
+    sourceTransform->setPosition(3.0f,0.0f,0.0f);
+    world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(combat->hasTag(target,77).value());
+    CHECK_TRUE(combat->setRelation(1,2,ayt::combat::Relation::Hostile).has_value());
+    world.fixedUpdate(1.0f/60);
+    CHECK_FALSE(combat->hasTag(target,77).value());
+    CHECK_TRUE(combat->setRelation(1,2,ayt::combat::Relation::Friendly).has_value());
+    world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(combat->hasTag(target,77).value());
+    auto overlap=ability->castArea(source,303).value();
+    world.fixedUpdate(1.0f/60);
+    CHECK_INT_EQ(combat->areaMemberCount(overlap.area).value(),1);
+    CHECK_TRUE(ability->stopArea(cast.area)->ended);
+    CHECK_TRUE(combat->hasTag(target,77).value());
+    CHECK_TRUE(ability->stopArea(overlap.area)->ended);
+    CHECK_FALSE(combat->hasTag(target,77).value());
+    for(int i=0;i<6;++i)world.fixedUpdate(1.0f/60);
+    auto finalCast=ability->castArea(source,303).value();
+    world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(combat->hasTag(target,77).value());
+    selectOther=true;
+    CHECK_TRUE(manager->world2D()->setRigidbodyTransform(otherBody,{3.5f,0,0},{})==
+        ayt::physics::PhysResult::Ok);
+    CHECK_TRUE(manager->stepAndWait(1.0f/60)==ayt::physics::PhysResult::Ok);
+    world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(combat->hasTag(other,77).value());
+    world.destroyEntity(otherEntity);
+    world.fixedUpdate(1.0f/60);
+    CHECK_INT_EQ(combat->areaMemberCount(finalCast.area).value(),1);
+    CHECK_TRUE(combat->hasTag(target,77).value());
+    const std::array death{ayt::stats::Mutation{ayt::stats::statId("health"),
+        ayt::stats::MutationOp::Decrease,100}};
+    auto* sourceStats=sourceEntity->getComponent<ayt::stats::StatsComponent>();
+    CHECK_TRUE(sourceStats->commit(death,sourceStats->version()).has_value());
+    world.fixedUpdate(1.0f/60);
+    CHECK_FALSE(combat->hasTag(target,77).value());
+    CHECK_FALSE(combat->areaMemberCount(finalCast.area).has_value());
     world.shutdown();
     manager->shutdown();
 }

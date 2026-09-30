@@ -207,4 +207,19 @@ Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
         return std::unexpected(configured.error());
     return installed;
 }
+Result<void> configureAreaSkill2D(AbilitySystem& ability,ayt::entity::World& world,
+    ayt::physics::PhysicsManager& physics,Id skill,
+    ayt::combat::AreaDefinition definition,ayt::combat::AreaQuery2D query,
+    ayt::combat::AreaSelection2D selection) {
+    if(auto valid=ayt::combat::validateAreaQuery2D(query);!valid)
+        return invalid<void>(valid.error().message);
+    if(!physics.world2D())return invalid<void>("2D physics world unavailable");
+    if(definition.permission.requireSelected && !selection)
+        return invalid<void>("selected 2D area requires a selection predicate");
+    return ability.configureAreaSkill(skill,std::move(definition),
+        [&world,&physics,query,selection=std::move(selection)](ayt::entity::EntityHandle source)
+            ->ayt::combat::Result<ayt::combat::AreaCandidateProvider> {
+            return ayt::combat::makeAreaCandidateProvider2D(world,physics,source,query,selection);
+        });
+}
 } // namespace ayt::ability

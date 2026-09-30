@@ -31,6 +31,13 @@ Gameplay then calls `castArea(actor, skill)` or `stopArea(areaId)`. Combat owns
 membership and effect lifetimes, including source-death cleanup. Normal Stats
 capacity policies apply to life-capacity modifiers; they do not restore an exact
 pre-effect HP snapshot.
+With the optional 2D adapter, `configureAreaSkill2D` accepts a source-following
+circle radius, XY offset, physics layer mask and optional dynamic selection
+predicate. The source needs a Transform; targets need current 2D RigidBody
+bindings. Box2D supplies complete overlap candidates on each fixed Sim step,
+while Combat rechecks selection, relations and effects. If the permission requires
+selection, a predicate must be configured. World and PhysicsManager must outlive
+the area. Gameplay still calls only `castArea(actor, skill)`.
 
 Fire delivery and Derived active skills share one bounded stage timeline.
 Configure a fire equipment configuration with `configureFireDelivery`, then call
