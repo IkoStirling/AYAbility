@@ -1,5 +1,6 @@
 #pragma once
 #include <AYAbility/Runtime.h>
+#include <AYAbility/Derived.h>
 #include <AYCombat/EntityIntegration.h>
 
 namespace ayt::ability {
@@ -15,13 +16,24 @@ struct AreaCastResult {
     ActivationEvent cast;
     std::uint64_t area=0;
 };
+struct DerivedCastResult {
+    ActivationEvent cast;
+    /// Give these immutable spawn commands to a projectile/physics host.
+    std::vector<EmissionCommand> emissions;
+};
+struct DerivedImpactResult {
+    /// Full cast snapshot, including the original equipment provider when present.
+    std::shared_ptr<const ReleaseSnapshot> source;
+    ayt::combat::ActionResult hit;
+    ayt::combat::CombatOutcome settlement;
+};
 /// Composition-time candidate factory. Each cast owns the returned callback until its area ends.
 using AreaProviderFactory=std::function<ayt::combat::Result<ayt::combat::AreaCandidateProvider>(
     ayt::entity::EntityHandle)>;
 
 /// World-owned gameplay entry. Equipment state and character skill state are coordinated here;
 /// Stats owns cost values and Combat owns target permission/damage/life publication.
-/// Fire currently executes one behavior; later Combat failures remain fired shots.
+/// Fire is immediate; Area and Derived keep independent delivery lifetimes.
 class AbilitySystem final : public ayt::entity::ISystem {
 public:
     const char* getName() const override { return "AbilitySystem"; }
@@ -43,6 +55,15 @@ public:
         AreaProviderFactory provider);
     Result<AreaCastResult> castArea(ayt::entity::EntityHandle actor,Id skill);
     Result<ayt::combat::AreaSweep> stopArea(std::uint64_t area);
+    /// Configure one skill's bounded stages at composition time; casts freeze the current values.
+    Result<void> configureDerivedSkill(Id skill,DerivedDefinition definition);
+    /// Cast once, charging Stats and opening Combat hit windows before publishing spawn commands.
+    Result<DerivedCastResult> castDerived(ayt::entity::EntityHandle actor,Id skill);
+    /// Physics/delivery host reports a candidate; Ability handles Combat, Stats and hit dedup.
+    Result<DerivedImpactResult> reportDerivedHit(Identity emitter,
+        ayt::entity::EntityHandle target,std::uint32_t part=0,std::uint32_t segment=0);
+    Result<void> finishDerivedEmitter(Identity emitter);
+    Result<void> cancelDerivedCast(std::uint64_t execution);
     Result<EquipmentState> equipment(Id instance) const;
     Result<GrantedSkill> skill(ayt::entity::EntityHandle actor,Id skill) const;
 private:
@@ -60,6 +81,25 @@ private:
         AreaProviderFactory provider;
     };
     std::map<Id,AreaSkill> _areaSkills;
+    std::map<Id,DerivedDefinition> _derivedSkills;
+    struct DerivedStageRecord {
+        DerivedStage stage;
+        ayt::combat::AttackRef attack;
+        std::uint64_t endTick=0,nextRequest=1;
+        bool open=false;
+    };
+    struct DerivedEmissionRecord { Identity emitter; Id stage=0; bool active=true; };
+    struct DerivedCastRecord {
+        std::shared_ptr<const ReleaseSnapshot> source;
+        ayt::entity::EntityHandle actor;
+        std::uint64_t statsGeneration=0,combatGeneration=0;
+        std::map<Id,DerivedStageRecord> stages;
+        std::vector<DerivedEmissionRecord> emissions;
+    };
+    std::map<Id,DerivedCastRecord> _derivedCasts;
+    Id _nextEmitter=1;
+    bool derivedSourceAvailable(const DerivedCastRecord&) const;
+    void closeDerived(DerivedCastRecord&);
     Result<Identity> actorIdentity(ayt::entity::EntityHandle) const;
     Identity equipmentIdentity(Id instance) const noexcept;
     Result<void> chargeCost(ayt::entity::EntityHandle actor,

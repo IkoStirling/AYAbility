@@ -14,6 +14,8 @@ inline std::shared_ptr<const Catalog> catalog() {
         {fire::SkillCooldownTicks,Unit::Ticks,0}}};
     ActionDefinition areaAction{.id=20,.behaviorId=area::Behavior,.defaults={
         {area::CooldownTicks,Unit::Ticks,6}}};
+    ActionDefinition derivedAction{.id=30,.behaviorId=derived::Behavior,.defaults={
+        {derived::CooldownTicks,Unit::Ticks,6},{2,Unit::Amount,3}}};
     EquipmentActionConfig pistolConfig{.id=101,.action=10};
     EquipmentActionConfig automaticConfig{.id=102,.action=10,.parameters={
         replace(fire::MagazineCapacity,12),replace(fire::IntervalTicks,3),
@@ -29,7 +31,11 @@ inline std::shared_ptr<const Catalog> catalog() {
         .parameters={{area::CooldownTicks,PatchOp::Replace,
             {.mode=TrackMode::Table,.table={6,5,4}}}},
         .cost=SkillCost{"mana",constant(10)}};
-    return Catalog::compile({fireAction,areaAction},{pistolConfig,automaticConfig},{mastery,burst,aura}).value();
+    SkillDefinition derivedSkill{.id=404,.action=30,.kind=SkillKind::Active,.maxLevel=3,
+        .parameters={{2,PatchOp::Replace,{.mode=TrackMode::Table,.table={3,4,5}}}},
+        .cost=SkillCost{"mana",constant(10)}};
+    return Catalog::compile({fireAction,areaAction,derivedAction},
+        {pistolConfig,automaticConfig},{mastery,burst,aura,derivedSkill}).value();
 }
 inline Runtime runtime(){return Runtime(catalog());}
 }

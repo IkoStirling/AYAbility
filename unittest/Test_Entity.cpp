@@ -3,6 +3,7 @@
 #include <AYEntity.h>
 #include <AYEntity/EntityModule.h>
 #include "Fixtures.h"
+#include <set>
 #include <stdexcept>
 
 namespace {
@@ -204,5 +205,99 @@ TEST_CASE(destroyed_actor_state_is_pruned_on_fixed_sim) {
     f.world.fixedUpdate(1.0f/60);
     CHECK_TRUE(f.ability->equipment(1001).error().code==ayt::ability::Error::Missing);
     CHECK_FALSE(f.ability->fireAt(f.source,f.target).has_value());
+}
+TEST_CASE(five_derived_stages_share_cast_but_keep_emitter_and_hit_identities) {
+    WorldFixture f;
+    auto doubled=ayt::stats::CalculationPlan::compile({
+        {.id=1,.op=ayt::stats::Op::Input,.binding=0},
+        {.id=2,.op=ayt::stats::Op::Constant,.value=20000},
+        {.id=3,.op=ayt::stats::Op::MultiplyRate,.a=1,.b=2}},3,1).value();
+    ayt::stats::Recipe recipe{"double_stage",ayt::stats::statId("health"),
+        ayt::stats::AttributeOp::Decrease,std::move(doubled),
+        {{ayt::stats::InputSource::Amount}}};
+    CHECK_TRUE(f.combat->attributes().setRecipes(
+        ayt::stats::RecipeBook::compile({std::move(recipe)}).value()).has_value());
+    CHECK_TRUE(f.ability->addEquipment(f.source,1001,101).has_value());
+    CHECK_TRUE(f.ability->equip(f.source,1001).has_value());
+    CHECK_TRUE(f.ability->grant(f.source,404,1).has_value());
+    DerivedDefinition definition;
+    definition.sourceLoss=SourceLossPolicy::ContinueFromSnapshot;
+    definition.stages={
+        {.id=1,.kind=DeliveryKind::Contact,.amountParameter=2,.lifetimeTicks=20},
+        {.id=2,.kind=DeliveryKind::Explosion,.amount=5,.recipe="double_stage",.lifetimeTicks=20},
+        {.id=3,.kind=DeliveryKind::Fragment,.emitters=3,.amount=7,.lifetimeTicks=20},
+        {.id=4,.kind=DeliveryKind::Return,.amount=11,.lifetimeTicks=20},
+        {.id=5,.kind=DeliveryKind::Hazard,.amount=13,.lifetimeTicks=20}};
+    CHECK_TRUE(f.ability->configureDerivedSkill(404,definition).has_value());
+    auto cast=f.ability->castDerived(f.source,404).value();
+    CHECK_TRUE(cast.emissions.size()==7 && cast.cast.execution!=0);
+    CHECK_TRUE(f.stats(f.source).read(ayt::stats::statId("mana"))->current==70);
+    CHECK_TRUE(cast.emissions.front().source->equipment->object==1001);
+    CHECK_TRUE(cast.emissions.front().source->skillLevel==1);
+    CHECK_TRUE(f.ability->setLevel(f.source,404,3).has_value());
+    std::set<std::uint64_t> attacks;
+    auto impact=[&](std::size_t emitter)->ayt::ability::DerivedImpactResult{
+        auto result=f.ability->reportDerivedHit(cast.emissions[emitter].emitter,f.target).value();
+        CHECK_TRUE(result.settlement.source.abilityInstance==cast.cast.execution);
+        CHECK_TRUE(result.settlement.source.effect==cast.emissions[emitter].stage);
+        CHECK_TRUE(result.settlement.source.directSource->object==cast.emissions[emitter].emitter.object);
+        CHECK_TRUE(result.source->equipment->object==1001 && result.source->skillLevel==1);
+        attacks.insert(result.settlement.attack.id);
+        return result;
+    };
+    CHECK_TRUE(impact(0).hit.actual==3);
+    CHECK_TRUE(impact(1).hit.actual==10);
+    CHECK_TRUE(impact(2).hit.actual==7);
+    CHECK_TRUE(f.ability->reportDerivedHit(cast.emissions[3].emitter,f.target).error().code==Error::Duplicate);
+    CHECK_TRUE(f.ability->reportDerivedHit(cast.emissions[4].emitter,f.target).error().code==Error::Duplicate);
+    auto* sourceEntity=f.world.getEntityByHandle(f.source);
+    f.world.destroyEntity(sourceEntity);
+    f.world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(impact(5).hit.actual==11);
+    CHECK_TRUE(impact(6).hit.actual==13);
+    CHECK_TRUE(attacks.size()==5);
+    CHECK_TRUE(f.stats(f.target).read(ayt::stats::statId("health"))->current==56);
+    for(const auto& emission:cast.emissions)
+        CHECK_TRUE(f.ability->finishDerivedEmitter(emission.emitter).has_value());
+    CHECK_TRUE(f.combat->hits().activeAttacks()==0);
+    CHECK_FALSE(f.ability->reportDerivedHit(cast.emissions[0].emitter,f.target).has_value());
+}
+TEST_CASE(derived_cancel_policy_closes_delayed_hits_on_source_loss) {
+    WorldFixture f;
+    CHECK_TRUE(f.ability->grant(f.source,404,1).has_value());
+    DerivedDefinition definition;
+    definition.stages={{.id=1,.amount=9,.lifetimeTicks=20}};
+    CHECK_TRUE(f.ability->configureDerivedSkill(404,definition).has_value());
+    auto cast=f.ability->castDerived(f.source,404).value();
+    CHECK_TRUE(f.combat->hits().activeAttacks()==1);
+    const std::array death{ayt::stats::Mutation{ayt::stats::statId("health"),
+        ayt::stats::MutationOp::Decrease,100}};
+    CHECK_TRUE(f.stats(f.source).commit(death,f.stats(f.source).version()).has_value());
+    CHECK_TRUE(f.ability->reportDerivedHit(cast.emissions[0].emitter,f.target).error().code==Error::Stale);
+    f.world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(f.combat->hits().activeAttacks()==0);
+    CHECK_TRUE(f.stats(f.target).read(ayt::stats::statId("health"))->current==100);
+}
+TEST_CASE(derived_cost_failure_and_expiry_leave_no_open_hit_windows) {
+    WorldFixture f;
+    CHECK_TRUE(f.ability->grant(f.source,404,1).has_value());
+    DerivedDefinition definition;
+    definition.stages={{.id=1,.amount=9,.lifetimeTicks=1}};
+    CHECK_TRUE(f.ability->configureDerivedSkill(404,definition).has_value());
+    const std::array empty{ayt::stats::Mutation{ayt::stats::statId("mana"),
+        ayt::stats::MutationOp::SetCurrent,0}};
+    CHECK_TRUE(f.stats(f.source).commit(empty,f.stats(f.source).version()).has_value());
+    CHECK_TRUE(f.ability->castDerived(f.source,404).error().code==Error::Empty);
+    CHECK_TRUE(f.combat->hits().activeAttacks()==0);
+    CHECK_TRUE(f.ability->skill(f.source,404)->nextReadyTick==0);
+    const std::array refill{ayt::stats::Mutation{ayt::stats::statId("mana"),
+        ayt::stats::MutationOp::SetCurrent,80}};
+    CHECK_TRUE(f.stats(f.source).commit(refill,f.stats(f.source).version()).has_value());
+    auto cast=f.ability->castDerived(f.source,404).value();
+    CHECK_TRUE(cast.cast.execution==1 && f.combat->hits().activeAttacks()==1);
+    f.world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(f.combat->hits().activeAttacks()==0);
+    CHECK_FALSE(f.ability->reportDerivedHit(cast.emissions[0].emitter,f.target).has_value());
+    CHECK_TRUE(f.stats(f.target).read(ayt::stats::statId("health"))->current==100);
 }
 TEST_SUITE_END

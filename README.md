@@ -32,8 +32,21 @@ membership and effect lifetimes, including source-death cleanup. Normal Stats
 capacity policies apply to life-capacity modifiers; they do not restore an exact
 pre-effect HP snapshot.
 
-Loose data files, an editor, arbitrary duration behaviors, full area release
-provenance, Combo, physics candidate adapters and checkpointing are not implemented.
+Derived active skills declare bounded, named hit stages at composition time.
+`castDerived(actor, skill)` freezes the skill level, resolved stage amounts,
+optional equipped provider, source team and cast identity; it charges Stats once
+and returns immutable spawn commands. A projectile or other delivery host owns
+movement and calls `reportDerivedHit(emitter, target)` on contact. Ability uses
+Combat to check target permission and deduplicate hits, and Stats for the chosen
+recipe and HP mutation. Multiple emitters in one stage share a hit window, while
+different stages can hit the same target. `finishDerivedEmitter` and
+`cancelDerivedCast` close windows early. The default source-loss policy cancels
+on death/destruction; `ContinueFromSnapshot` allows detached delayed hits.
+Explicit Stats recipes that need live source attributes cannot run after the
+source disappears unless the recipe supports snapshot-only inputs.
+
+Loose data files, an editor, arbitrary behavior graphs, full area release
+provenance, Combo, projectile movement/physics adapters and checkpointing are not implemented.
 The [execution plan](../../AYDocs/AYABILITY-IMPLEMENTATION-PLAN.md) tracks those
 stages. The module has no remote and does not require renderer, input devices or
 physics to build its Core.

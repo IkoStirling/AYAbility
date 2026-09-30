@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 
-add_library(AYAbilityCore STATIC src/Ability.cpp src/Runtime.cpp)
+add_library(AYAbilityCore STATIC src/Ability.cpp src/Runtime.cpp src/Derived.cpp)
 add_library(AYAbility::Core ALIAS AYAbilityCore)
 target_compile_features(AYAbilityCore PUBLIC cxx_std_23)
 target_include_directories(AYAbilityCore PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)

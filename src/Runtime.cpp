@@ -168,7 +168,7 @@ Result<ActivationEvent> Runtime::activate(ActivationRequest request,
         const std::function<Result<void>(const ActivationEvent&)>& preCommit) {
     if(_committing)return fail<ActivationEvent>(Error::Busy,"runtime commit in progress");
     if(!request.actor.valid() || !request.activeSkill || !_catalog)
-        return fail<ActivationEvent>(Error::Invalid,"invalid area activation request");
+        return fail<ActivationEvent>(Error::Invalid,"invalid activation request");
     auto owner=_actors.find(request.actor);
     if(owner==_actors.end())return fail<ActivationEvent>(Error::Missing,"actor missing");
     auto granted=owner->second.skills.find(request.activeSkill);
@@ -180,9 +180,12 @@ Result<ActivationEvent> Runtime::activate(ActivationRequest request,
     for(const auto& [id,state]:owner->second.skills)levels.push_back({id,state.level});
     auto resolved=_catalog->resolve(skill->action,0,levels,request.activeSkill);
     if(!resolved)return std::unexpected(resolved.error());
-    if(resolved->behaviorId!=area::Behavior)return fail<ActivationEvent>(Error::Unsupported,"not an area behavior");
-    auto cooldown=resolved->value(area::CooldownTicks,Unit::Ticks);
-    if(!cooldown || *cooldown<0)return fail<ActivationEvent>(Error::Invalid,"invalid area cooldown");
+    if(resolved->behaviorId!=area::Behavior && resolved->behaviorId!=derived::Behavior)
+        return fail<ActivationEvent>(Error::Unsupported,"not an active delivery behavior");
+    const Id cooldownParameter=resolved->behaviorId==derived::Behavior
+        ?derived::CooldownTicks:area::CooldownTicks;
+    auto cooldown=resolved->value(cooldownParameter,Unit::Ticks);
+    if(!cooldown || *cooldown<0)return fail<ActivationEvent>(Error::Invalid,"invalid activation cooldown");
     auto next=future(request.tick,*cooldown);if(!next)return std::unexpected(next.error());
     if(!_nextExecution || _nextExecution==std::numeric_limits<std::uint64_t>::max())
         return fail<ActivationEvent>(Error::Limit,"execution identity limit");
@@ -209,6 +212,12 @@ Result<GrantedSkill> Runtime::skill(Identity actor,Id skillId) const {
     if(owner==_actors.end() || !owner->second.skills.contains(skillId))
         return fail<GrantedSkill>(Error::Missing,"skill missing");
     return owner->second.skills.at(skillId);
+}
+Result<std::optional<Identity>> Runtime::equipped(Identity actor) const {
+    auto owner=_actors.find(actor);
+    if(owner==_actors.end())return fail<std::optional<Identity>>(Error::Missing,"actor missing");
+    if(!owner->second.equipped.valid())return std::optional<Identity>{};
+    return owner->second.equipped;
 }
 Result<void> Runtime::removeActor(Identity actor) {
     if(_committing)return fail<void>(Error::Busy,"runtime commit in progress");

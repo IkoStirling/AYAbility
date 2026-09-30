@@ -1,5 +1,7 @@
 #include <AYTest.h>
+#include <AYAbility/Derived.h>
 #include "Fixtures.h"
+#include <stdexcept>
 
 TEST_SUITE(AbilityRuntimeTests)
 TEST_CASE(shared_fire_behavior_preserves_each_weapon_state) {
@@ -81,5 +83,29 @@ TEST_CASE(area_skill_has_character_cooldown_and_does_not_change_weapon_resolutio
     CHECK_TRUE(runtime.skill(fixture::actor,303)->nextReadyTick==7);
     auto second=runtime.activate({fixture::actor,7,303}).value();
     CHECK_TRUE(second.execution==3 && runtime.skill(fixture::actor,303)->nextReadyTick==11);
+}
+TEST_CASE(derived_release_freezes_level_equipment_and_bounded_emitter_identity) {
+    auto runtime=fixture::runtime();
+    CHECK_TRUE(runtime.addEquipment(fixture::actor,fixture::pistol,101).has_value());
+    CHECK_TRUE(runtime.equip(fixture::actor,fixture::pistol).has_value());
+    auto granted=runtime.grant(fixture::actor,404,1);
+    if(!granted)throw std::runtime_error(granted.error().message);
+    auto cast=runtime.activate({fixture::actor,1,404}).value();
+    DerivedDefinition definition;
+    definition.sourceLoss=SourceLossPolicy::ContinueFromSnapshot;
+    definition.stages={{.id=1,.kind=DeliveryKind::Fragment,.emitters=3,
+        .amountParameter=2,.lifetimeTicks=20}};
+    auto released=makeDerivedRelease(definition,cast,*runtime.equipped(fixture::actor),
+        runtime.skill(fixture::actor,404)->level,7,fixture::actor.domain,1).value();
+    CHECK_TRUE(released.emissions.size()==3 && released.stages[0].amount==3);
+    CHECK_TRUE(released.source->equipment==fixture::pistol && released.source->team==7);
+    CHECK_TRUE(released.emissions[0].source==released.emissions[2].source);
+    CHECK_TRUE(released.emissions[0].emitter!=released.emissions[1].emitter);
+    CHECK_TRUE(runtime.setLevel(fixture::actor,404,3).has_value());
+    CHECK_TRUE(runtime.equip(fixture::actor,fixture::pistol).has_value());
+    CHECK_TRUE(released.source->skillLevel==1 && released.stages[0].amount==3);
+    CHECK_TRUE(released.source->resolved.value(2,Unit::Amount).value()==3);
+    definition.stages.push_back(definition.stages.front());
+    CHECK_TRUE(validateDerived(definition).error().code==Error::Invalid);
 }
 TEST_SUITE_END

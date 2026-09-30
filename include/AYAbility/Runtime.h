@@ -13,6 +13,9 @@ inline constexpr Id Behavior=1;
 namespace area {
 inline constexpr Id Behavior=2, CooldownTicks=1;
 }
+namespace derived {
+inline constexpr Id Behavior=3, CooldownTicks=1;
+}
 
 struct EquipmentState {
     Identity owner, identity;
@@ -52,11 +55,12 @@ public:
     Result<void> beginReload(Identity actor, std::uint64_t tick);
     Result<FireEvent> fire(FireRequest request,
         const std::function<Result<void>(const FireEvent&)>& preCommit={});
-    /// Activate a non-equipment area skill; the host installs a persistent area after acceptance.
+    /// Activate a non-equipment Area or Derived skill; the host installs its delivery after acceptance.
     Result<ActivationEvent> activate(ActivationRequest request,
         const std::function<Result<void>(const ActivationEvent&)>& preCommit={});
     Result<EquipmentState> equipment(Identity identity) const;
     Result<GrantedSkill> skill(Identity actor, Id skill) const;
+    Result<std::optional<Identity>> equipped(Identity actor) const;
     Result<void> removeActor(Identity actor);
 private:
     struct ActorState {
