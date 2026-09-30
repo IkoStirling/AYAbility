@@ -213,8 +213,9 @@ Result<ResolvedAction> Catalog::resolve(Id actionId,Id equipmentConfig,
     std::vector<const Feature*> selectedFeatures;
     for(const auto& entry:ordered) {
         const auto* skill=findSkill(entry.skill);
-        if(!skill || skill->action!=actionId || !entry.level || entry.level>skill->maxLevel)
+        if(!skill || !entry.level || entry.level>skill->maxLevel)
             return fail<ResolvedAction>(Error::Invalid,"invalid skill level or action");
+        if(skill->action!=actionId)continue;
         if(skill->kind==SkillKind::Active && entry.skill!=activeSkill)continue;
         if(skill->kind==SkillKind::Passive && entry.skill==activeSkill)
             return fail<ResolvedAction>(Error::Invalid,"passive skill cannot be activated");
@@ -231,7 +232,7 @@ Result<ResolvedAction> Catalog::resolve(Id actionId,Id equipmentConfig,
     }
     if(activeSkill) {
         const auto* skill=findSkill(activeSkill);
-        if(!skill || skill->kind!=SkillKind::Active ||
+        if(!skill || skill->action!=actionId || skill->kind!=SkillKind::Active ||
            std::none_of(ordered.begin(),ordered.end(),[&](auto item){return item.skill==activeSkill;}))
             return fail<ResolvedAction>(Error::Missing,"active skill not granted");
     }

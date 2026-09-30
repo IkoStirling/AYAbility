@@ -63,4 +63,23 @@ TEST_CASE(reload_and_reentrancy_have_explicit_boundaries) {
     });
     CHECK_TRUE(inner.has_value());
 }
+TEST_CASE(area_skill_has_character_cooldown_and_does_not_change_weapon_resolution) {
+    auto runtime=fixture::runtime();
+    CHECK_TRUE(runtime.addEquipment(fixture::actor,fixture::pistol,101).has_value());
+    CHECK_TRUE(runtime.equip(fixture::actor,fixture::pistol).has_value());
+    CHECK_TRUE(runtime.grant(fixture::actor,303,1).has_value());
+    auto first=runtime.activate({fixture::actor,1,303}).value();
+    CHECK_TRUE(first.activeSkill==303 && first.resolved.cost->second==10);
+    CHECK_TRUE(runtime.skill(fixture::actor,303)->nextReadyTick==7);
+    CHECK_TRUE(runtime.fire({fixture::actor,1}).has_value());
+    CHECK_TRUE(runtime.activate({fixture::actor,2,303}).error().code==Error::Cooldown);
+    CHECK_TRUE(runtime.setLevel(fixture::actor,303,3).has_value());
+    auto denied=runtime.activate({fixture::actor,7,303},[](const ActivationEvent&)->Result<void>{
+        return std::unexpected(Diagnostic{Error::Empty,"resource empty",{}});
+    });
+    CHECK_TRUE(denied.error().code==Error::Empty);
+    CHECK_TRUE(runtime.skill(fixture::actor,303)->nextReadyTick==7);
+    auto second=runtime.activate({fixture::actor,7,303}).value();
+    CHECK_TRUE(second.execution==3 && runtime.skill(fixture::actor,303)->nextReadyTick==11);
+}
 TEST_SUITE_END

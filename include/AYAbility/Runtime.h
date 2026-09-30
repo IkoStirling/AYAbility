@@ -10,6 +10,9 @@ inline constexpr Id Amount=1, IntervalTicks=2, MinimumIntervalTicks=3, IntervalS
 inline constexpr Id StreakResetTicks=5, MagazineCapacity=6, ReloadTicks=7, Projectiles=8, SkillCooldownTicks=9;
 inline constexpr Id Behavior=1;
 }
+namespace area {
+inline constexpr Id Behavior=2, CooldownTicks=1;
+}
 
 struct EquipmentState {
     Identity owner, identity;
@@ -29,6 +32,13 @@ struct FireEvent {
     ResolvedAction resolved;
 };
 struct FireRequest { Identity actor; std::uint64_t tick=0; Id activeSkill=0; };
+struct ActivationRequest { Identity actor; std::uint64_t tick=0; Id activeSkill=0; };
+struct ActivationEvent {
+    std::uint64_t execution=0,tick=0;
+    Identity actor;
+    Id activeSkill=0;
+    ResolvedAction resolved;
+};
 
 /// Single-owner headless runtime. The caller supplies the fixed Sim tick.
 /// A pre-commit hook can atomically charge an external resource before local state changes.
@@ -42,6 +52,9 @@ public:
     Result<void> beginReload(Identity actor, std::uint64_t tick);
     Result<FireEvent> fire(FireRequest request,
         const std::function<Result<void>(const FireEvent&)>& preCommit={});
+    /// Activate a non-equipment area skill; the host installs a persistent area after acceptance.
+    Result<ActivationEvent> activate(ActivationRequest request,
+        const std::function<Result<void>(const ActivationEvent&)>& preCommit={});
     Result<EquipmentState> equipment(Identity identity) const;
     Result<GrantedSkill> skill(Identity actor, Id skill) const;
     Result<void> removeActor(Identity actor);

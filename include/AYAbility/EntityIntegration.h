@@ -6,9 +6,18 @@ namespace ayt::ability {
 struct FireActionResult {
     FireEvent shot;
     std::vector<ayt::combat::ActionResult> hits;
+    /// Advanced per-projectile outcomes retain Combat source, attack and request identities.
+    std::vector<ayt::combat::CombatOutcome> settlements;
     /// A fired shot keeps its ammo/cooldown when a later target settlement fails.
     std::optional<ayt::combat::Diagnostic> combatError;
 };
+struct AreaCastResult {
+    ActivationEvent cast;
+    std::uint64_t area=0;
+};
+/// Composition-time candidate factory. Each cast owns the returned callback until its area ends.
+using AreaProviderFactory=std::function<ayt::combat::Result<ayt::combat::AreaCandidateProvider>(
+    ayt::entity::EntityHandle)>;
 
 /// World-owned gameplay entry. Equipment state and character skill state are coordinated here;
 /// Stats owns cost values and Combat owns target permission/damage/life publication.
@@ -29,6 +38,11 @@ public:
     Result<FireActionResult> fireAt(ayt::entity::EntityHandle actor,
         std::optional<ayt::entity::EntityHandle> target={},Id activeSkill=0,
         std::string_view recipe={});
+    /// Register authored area behavior once; castArea then needs only actor and granted skill.
+    Result<void> configureAreaSkill(Id skill,ayt::combat::AreaDefinition definition,
+        AreaProviderFactory provider);
+    Result<AreaCastResult> castArea(ayt::entity::EntityHandle actor,Id skill);
+    Result<ayt::combat::AreaSweep> stopArea(std::uint64_t area);
     Result<EquipmentState> equipment(Id instance) const;
     Result<GrantedSkill> skill(ayt::entity::EntityHandle actor,Id skill) const;
 private:
@@ -41,8 +55,15 @@ private:
     std::shared_ptr<const Catalog> _catalog;
     std::optional<Runtime> _runtime;
     std::map<Identity,ActorRecord> _actors;
+    struct AreaSkill {
+        ayt::combat::AreaDefinition definition;
+        AreaProviderFactory provider;
+    };
+    std::map<Id,AreaSkill> _areaSkills;
     Result<Identity> actorIdentity(ayt::entity::EntityHandle) const;
     Identity equipmentIdentity(Id instance) const noexcept;
+    Result<void> chargeCost(ayt::entity::EntityHandle actor,
+        const std::optional<std::pair<std::string,Value>>& cost);
 };
 
 /// Register shared Stats/Combat gameplay components before ComponentRegistry seal.

@@ -164,6 +164,41 @@ Result<FireEvent> Runtime::fire(FireRequest request,
     ++_nextExecution;
     return event;
 }
+Result<ActivationEvent> Runtime::activate(ActivationRequest request,
+        const std::function<Result<void>(const ActivationEvent&)>& preCommit) {
+    if(_committing)return fail<ActivationEvent>(Error::Busy,"runtime commit in progress");
+    if(!request.actor.valid() || !request.activeSkill || !_catalog)
+        return fail<ActivationEvent>(Error::Invalid,"invalid area activation request");
+    auto owner=_actors.find(request.actor);
+    if(owner==_actors.end())return fail<ActivationEvent>(Error::Missing,"actor missing");
+    auto granted=owner->second.skills.find(request.activeSkill);
+    if(granted==owner->second.skills.end())return fail<ActivationEvent>(Error::Missing,"active skill not granted");
+    const auto* skill=_catalog->findSkill(request.activeSkill);
+    if(!skill || skill->kind!=SkillKind::Active)return fail<ActivationEvent>(Error::Invalid,"active skill definition missing");
+    if(request.tick<granted->second.nextReadyTick)return fail<ActivationEvent>(Error::Cooldown,"skill cooldown active");
+    std::vector<SkillLevel> levels;
+    for(const auto& [id,state]:owner->second.skills)levels.push_back({id,state.level});
+    auto resolved=_catalog->resolve(skill->action,0,levels,request.activeSkill);
+    if(!resolved)return std::unexpected(resolved.error());
+    if(resolved->behaviorId!=area::Behavior)return fail<ActivationEvent>(Error::Unsupported,"not an area behavior");
+    auto cooldown=resolved->value(area::CooldownTicks,Unit::Ticks);
+    if(!cooldown || *cooldown<0)return fail<ActivationEvent>(Error::Invalid,"invalid area cooldown");
+    auto next=future(request.tick,*cooldown);if(!next)return std::unexpected(next.error());
+    if(!_nextExecution || _nextExecution==std::numeric_limits<std::uint64_t>::max())
+        return fail<ActivationEvent>(Error::Limit,"execution identity limit");
+    ActivationEvent event{_nextExecution,request.tick,request.actor,request.activeSkill,std::move(*resolved)};
+    if(preCommit) {
+        _committing=true;
+        Result<void> committed;
+        try{committed=preCommit(event);}
+        catch(...){_committing=false;return fail<ActivationEvent>(Error::Invalid,"pre-commit hook threw");}
+        _committing=false;
+        if(!committed)return std::unexpected(committed.error());
+    }
+    granted->second.nextReadyTick=*next;
+    ++_nextExecution;
+    return event;
+}
 Result<EquipmentState> Runtime::equipment(Identity identity) const {
     auto at=_equipment.find(identity);
     if(at==_equipment.end())return fail<EquipmentState>(Error::Missing,"equipment missing");

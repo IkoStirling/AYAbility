@@ -12,6 +12,8 @@ inline std::shared_ptr<const Catalog> catalog() {
         {fire::StreakResetTicks,Unit::Ticks,4},{fire::MagazineCapacity,Unit::Count,6},
         {fire::ReloadTicks,Unit::Ticks,3},{fire::Projectiles,Unit::Count,1},
         {fire::SkillCooldownTicks,Unit::Ticks,0}}};
+    ActionDefinition areaAction{.id=20,.behaviorId=area::Behavior,.defaults={
+        {area::CooldownTicks,Unit::Ticks,6}}};
     EquipmentActionConfig pistolConfig{.id=101,.action=10};
     EquipmentActionConfig automaticConfig{.id=102,.action=10,.parameters={
         replace(fire::MagazineCapacity,12),replace(fire::IntervalTicks,3),
@@ -23,7 +25,11 @@ inline std::shared_ptr<const Catalog> catalog() {
         .parameters={{fire::Projectiles,PatchOp::Replace,{.mode=TrackMode::Curve,
             .curve={{1,1},{3,3}}}},replace(fire::SkillCooldownTicks,8)},
         .features={{901,0,0,2}},.cost=SkillCost{"mana",constant(5)}};
-    return Catalog::compile({fireAction},{pistolConfig,automaticConfig},{mastery,burst}).value();
+    SkillDefinition aura{.id=303,.action=20,.kind=SkillKind::Active,.maxLevel=3,
+        .parameters={{area::CooldownTicks,PatchOp::Replace,
+            {.mode=TrackMode::Table,.table={6,5,4}}}},
+        .cost=SkillCost{"mana",constant(10)}};
+    return Catalog::compile({fireAction,areaAction},{pistolConfig,automaticConfig},{mastery,burst,aura}).value();
 }
 inline Runtime runtime(){return Runtime(catalog());}
 }
