@@ -176,6 +176,12 @@ std::vector<EmissionCommand> AbilitySystem::takeEmissions() {
     _emissionQueue.clear();
     return ready;
 }
+bool AbilitySystem::emitterActive(Identity emitter) const noexcept {
+    for(const auto& [execution,cast]:_derivedCasts)
+        for(const auto& item:cast.emissions)
+            if(item.emitter==emitter)return item.active;
+    return false;
+}
 Result<FireDeliveryResult> AbilitySystem::fireDelivered(ayt::entity::EntityHandle actor,Id activeSkill) {
     auto key=actorIdentity(actor);if(!key)return std::unexpected(key.error());
     auto equipped=_runtime->equipped(*key);

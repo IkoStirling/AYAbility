@@ -1,5 +1,6 @@
 #include <AYAbility/Authoring.h>
 #include <nlohmann/json.hpp>
+#include <cmath>
 #include <set>
 
 namespace ayt::ability {
@@ -18,8 +19,11 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DerivedStage,id,kind,emitters,am
     emittersParameter,operation,intent,attribute,allowedTargets,effect)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DerivedDefinition,sourceLoss,stages)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DeliveryBinding,owner,definition)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery2DProfile,velocity,spawnOffset,
+    radius,layerMask,reverseAfterTicks,ignoreSource,obstacle,target)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery2DBinding,action,stage,profile)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AuthoringDocument,version,actions,equipment,
-    skills,fireDeliveries,derivedSkills,effectReferences)
+    skills,fireDeliveries,derivedSkills,delivery2D,effectReferences)
 
 namespace {
 template<class T> Result<T> invalid(std::string message) {
@@ -35,6 +39,16 @@ bool parametersValid(const DerivedDefinition& definition,const ActionDefinition&
     return true;
 }
 }
+Result<void> validateDelivery2DProfile(const Delivery2DProfile& profile) {
+    for(auto value:profile.velocity)if(!std::isfinite(value))return invalid<void>("non-finite 2D velocity");
+    for(auto value:profile.spawnOffset)if(!std::isfinite(value))return invalid<void>("non-finite 2D offset");
+    if(profile.velocity[2]!=0 || profile.spawnOffset[2]!=0 ||
+       !std::isfinite(profile.radius) || profile.radius<0 || !profile.layerMask ||
+       profile.obstacle>CollisionResponse2D::PassThrough ||
+       profile.target>CollisionResponse2D::PassThrough)
+        return invalid<void>("invalid 2D delivery profile");
+    return {};
+}
 Result<std::shared_ptr<const Catalog>> compileAuthoring(const AuthoringDocument& document) {
     if(document.version!=1)return invalid<std::shared_ptr<const Catalog>>(
         "unsupported Ability authoring version");
@@ -44,6 +58,7 @@ Result<std::shared_ptr<const Catalog>> compileAuthoring(const AuthoringDocument&
     for(auto id:document.effectReferences)
         if(!id || !effects.insert(id).second)
             return invalid<std::shared_ptr<const Catalog>>("duplicate or zero effect reference");
+    std::set<std::pair<Id,Id>> stageKeys;
     for(auto [fire,bindings]:{std::pair{true,&document.fireDeliveries},
                               std::pair{false,&document.derivedSkills}}) {
         std::set<Id> owners;
@@ -67,10 +82,20 @@ Result<std::shared_ptr<const Catalog>> compileAuthoring(const AuthoringDocument&
             }
             if(!parametersValid(binding.definition,*action))
                 return invalid<std::shared_ptr<const Catalog>>("delivery parameter unit mismatch");
-            for(const auto& stage:binding.definition.stages)
+            for(const auto& stage:binding.definition.stages) {
                 if(stage.effect && !effects.contains(stage.effect))
                     return invalid<std::shared_ptr<const Catalog>>("unresolved Combat effect reference");
+                stageKeys.insert({action->id,stage.id});
+            }
         }
+    }
+    std::set<std::pair<Id,Id>> profiles;
+    for(const auto& binding:document.delivery2D) {
+        const auto key=std::pair{binding.action,binding.stage};
+        if(!stageKeys.contains(key) || !profiles.insert(key).second)
+            return invalid<std::shared_ptr<const Catalog>>("2D profile references unknown or duplicate stage");
+        if(auto valid=validateDelivery2DProfile(binding.profile);!valid)
+            return std::unexpected(valid.error());
     }
     return catalog;
 }

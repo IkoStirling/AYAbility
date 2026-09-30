@@ -8,7 +8,7 @@ the returned `AuthoringDocument`, then install with `installAbility(world, docum
 compile or save does not replace an existing World catalog.
 
 Top-level arrays are `actions`, `equipment`, `skills`, `fireDeliveries`,
-`derivedSkills`, and `effectReferences`. Each delivery binding has `owner` and
+`derivedSkills`, `delivery2D`, and `effectReferences`. Each stage binding has `owner` and
 `definition`. For fire, owner is an equipment configuration ID; for Derived it
 is an active skill ID. Every stage ID is unique within its definition. Stage
 `predecessor` must name an earlier stage; `trigger` chooses release (0), first
@@ -29,10 +29,19 @@ Enums are stored as integers in version 1:
 | `sourceLoss` | Cancel 0, ContinueFromSnapshot 1 |
 | `operation` on a stage | Damage 0, Heal 1, IncreaseAttribute 2, DecreaseAttribute 3, SetAttribute 4, OwnedEffect 5 |
 | `intent` | Harmful 0, Beneficial 1 |
+| `obstacle` / `target` in `delivery2D.profile` | Stop 0, PassThrough 1 |
 
 The remaining scalar fields match the public types in `Ability.h` and
 `Derived.h`. Missing optional fields use their public defaults. The loader
 validates schema version, catalog references, parameter units, stage order,
-effect references and bounded stage/emitter counts before installation. 2D
-velocity, radius, spawn offset and physics layer are composition settings on
-`Ability2DDeliverySystem`; they are not authoritative ability definitions.
+effect references, 2D profile references and bounded stage/emitter counts.
+Each `delivery2D` binding uses `{ "action": id, "stage": id, "profile": { ... } }`.
+`velocity` and `spawnOffset` are three-number arrays with zero Z; `radius`,
+`layerMask`, `reverseAfterTicks`, `ignoreSource`, `obstacle`, and `target` are
+optional profile fields. `installAbility2D(world, ability, manager, document)`
+checks that every authored stage has a profile and installs them together.
+Obstacles are physics bodies without a configured Combat target. Source-body
+exclusion is physical; Combat still decides whether any other entity may be
+affected. A root stage released at tick N is first queried on the next World
+fixed update, so a periodic stage needs `lifetimeTicks` greater than the number
+of desired future query ticks.

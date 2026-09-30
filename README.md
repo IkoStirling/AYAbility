@@ -44,12 +44,17 @@ increase/decrease/set and Combat-owned effects use explicit target masks.
 Multiple emitters in one stage share a hit window; each stage has its own.
 `finishDerivedEmitter` and `cancelDerivedCast` close windows early.
 
-`AYAbility::Physics2D` is an optional real Box2D adapter. Install it once after
-Ability with `installAbility2D(world, ability, physicsManager)` and configure
-world-space stage velocity, radius and query layer once. It drains Ability's
+`AYAbility::Physics2D` is an optional real Box2D adapter. Install it after
+Ability with `installAbility2D(world, ability, physicsManager, document)`;
+the document supplies validated world-space stage velocity, radius, query layer
+and physical collision responses. The advanced overload accepts manual profiles.
+It drains Ability's
 emissions during fixed Sim, raycasts moving contact/fragment/return stages,
 overlaps explosion/hazard stages, maps 2D bodies to Entity targets, and reports
 hits back to Ability. Keep the physics manager alive through World shutdown.
+Moving stages can ignore their source body, stop at or pass through obstacles,
+and stop at or pierce Combat targets. Cancelled/expired emitters are discarded
+before further physics queries; hazard overlap stops when its stage ends.
 Register Entity physics components before sealing the component registry and
 attach each target's 2D `RigidBodyComponent` to its actual Box2D body handle.
 The default source-loss policy cancels on death/destruction;

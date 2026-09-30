@@ -82,6 +82,8 @@ public:
     Result<void> cancelDerivedCast(std::uint64_t execution);
     /// Drains commands whose fixed-tick trigger has fired; stale/cancelled emissions are omitted.
     std::vector<EmissionCommand> takeEmissions();
+    /// Delivery adapters use this to discard projectiles after cancellation or source loss.
+    bool emitterActive(Identity emitter) const noexcept;
     Result<EquipmentState> equipment(Id instance) const;
     Result<GrantedSkill> skill(ayt::entity::EntityHandle actor,Id skill) const;
 private:

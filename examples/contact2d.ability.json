@@ -25,5 +25,12 @@
         ]
       }
     }
+  ],
+  "delivery2D": [
+    {"action": 30, "stage": 1,
+     "profile": {"velocity": [120, 0, 0], "spawnOffset": [-0.4, 0, 0],
+                 "ignoreSource": true, "obstacle": 1, "target": 0}},
+    {"action": 30, "stage": 2,
+     "profile": {"radius": 1.0, "ignoreSource": true}}
   ]
 }

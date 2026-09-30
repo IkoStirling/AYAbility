@@ -1,5 +1,6 @@
 #include <AYTest.h>
 #include <AYAbility/Authoring.h>
+#include <limits>
 
 using namespace ayt::ability;
 TEST_SUITE(AbilityAuthoringTests)
@@ -24,14 +25,24 @@ TEST_CASE(versioned_document_roundtrips_and_validates_references) {
     authored.fireDeliveries={{101,{.stages={{.id=1,.amountParameter=fire::Amount,
         .emittersParameter=fire::Projectiles}}}}};
     authored.derivedSkills={{202,{.stages={{.id=1,.amountParameter=55}}}}};
+    authored.delivery2D={{10,1,{.velocity={120.0f,0.0f,0.0f},
+        .obstacle=CollisionResponse2D::PassThrough}},
+        {20,1,{.radius=1.0f}}};
     auto saved=saveAuthoring(authored);
     CHECK_TRUE(saved.has_value());
     auto loaded=loadAuthoring(*saved);
     CHECK_TRUE(loaded.has_value());
     CHECK_TRUE(loaded->actions.size()==2 && loaded->derivedSkills.size()==1);
+    CHECK_TRUE(loaded->delivery2D[0].profile.obstacle==CollisionResponse2D::PassThrough);
     CHECK_TRUE(loaded->skills[0].parameters[0].values.curve[1].value==10);
     auto savedAgain=saveAuthoring(*loaded);
     CHECK_TRUE(savedAgain && *savedAgain==*saved);
+    loaded->delivery2D[0].stage=999;
+    CHECK_FALSE(compileAuthoring(*loaded).has_value());
+    loaded->delivery2D[0].stage=1;
+    loaded->delivery2D[0].profile.velocity[0]=std::numeric_limits<float>::infinity();
+    CHECK_FALSE(compileAuthoring(*loaded).has_value());
+    loaded->delivery2D[0].profile.velocity[0]=120.0f;
     loaded->version=2;
     CHECK_FALSE(compileAuthoring(*loaded).has_value());
     loaded->version=1;loaded->derivedSkills[0].owner=999;
