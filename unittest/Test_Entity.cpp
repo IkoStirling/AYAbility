@@ -300,4 +300,93 @@ TEST_CASE(derived_cost_failure_and_expiry_leave_no_open_hit_windows) {
     CHECK_FALSE(f.ability->reportDerivedHit(cast.emissions[0].emitter,f.target).has_value());
     CHECK_TRUE(f.stats(f.target).read(ayt::stats::statId("health"))->current==100);
 }
+TEST_CASE(weapon_fire_and_skill_stages_use_one_release_timeline) {
+    WorldFixture f;
+    CHECK_TRUE(f.ability->addEquipment(f.source,1001,101).has_value());
+    CHECK_TRUE(f.ability->equip(f.source,1001).has_value());
+    CHECK_TRUE(f.ability->grant(f.source,202,3).has_value());
+    DerivedDefinition definition;
+    definition.stages={
+        {.id=1,.kind=DeliveryKind::Contact,.amountParameter=fire::Amount,
+            .lifetimeTicks=3,.emittersParameter=fire::Projectiles},
+        {.id=2,.kind=DeliveryKind::Explosion,.amount=5,.lifetimeTicks=2,
+            .trigger=StageTrigger::FirstConfirmedHit,.predecessor=1,.delayTicks=1},
+        {.id=3,.kind=DeliveryKind::Hazard,.amount=7,.lifetimeTicks=2,
+            .trigger=StageTrigger::StageFinished,.predecessor=2}};
+    CHECK_TRUE(f.ability->configureFireDelivery(101,definition).has_value());
+    auto fired=f.ability->fireDelivered(f.source,202).value();
+    CHECK_TRUE(fired.shot.projectiles==3 && fired.emissions.size()==3);
+    CHECK_TRUE(fired.shot.ammunitionRemaining==5 && f.ability->skill(f.source,202)->nextReadyTick==8);
+    CHECK_TRUE(f.stats(f.source).read(ayt::stats::statId("mana"))->current==75);
+    auto initial=f.ability->takeEmissions();
+    CHECK_TRUE(initial.size()==3 && initial[0].stage==1);
+    CHECK_TRUE(f.ability->reportDerivedHit(initial[0].emitter,f.target,0,0,
+        std::array<float,3>{5.0f,6.0f,0.0f})->hit.actual==10);
+    CHECK_TRUE(f.ability->reportDerivedHit(initial[1].emitter,f.target).error().code==Error::Duplicate);
+    CHECK_TRUE(f.ability->takeEmissions().empty());
+    f.world.fixedUpdate(1.0f/60);
+    auto explosion=f.ability->takeEmissions();
+    CHECK_TRUE(explosion.size()==1 && explosion[0].stage==2 && explosion[0].tick==1);
+    CHECK_TRUE(explosion[0].origin && (*explosion[0].origin)[0]==5.0f);
+    CHECK_TRUE(explosion[0].source->execution==fired.shot.execution);
+    CHECK_TRUE(f.ability->reportDerivedHit(explosion[0].emitter,f.target)->hit.actual==5);
+    CHECK_TRUE(f.ability->finishDerivedEmitter(explosion[0].emitter).has_value());
+    auto hazard=f.ability->takeEmissions();
+    CHECK_TRUE(hazard.size()==1 && hazard[0].stage==3 && hazard[0].tick==1);
+    CHECK_TRUE(hazard[0].origin && (*hazard[0].origin)[1]==6.0f);
+    CHECK_TRUE(f.ability->reportDerivedHit(hazard[0].emitter,f.target)->hit.actual==7);
+    CHECK_TRUE(f.ability->finishDerivedEmitter(hazard[0].emitter).has_value());
+    CHECK_TRUE(f.stats(f.target).read(ayt::stats::statId("health"))->current==78);
+    f.world.fixedUpdate(1.0f/60);f.world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(f.combat->hits().activeAttacks()==0);
+}
+TEST_CASE(delivery_stages_route_attributes_and_owned_effects) {
+    WorldFixture f;
+    CHECK_TRUE(f.ability->grant(f.source,404,1).has_value());
+    ayt::combat::EffectDefinition emptyEffect{};
+    emptyEffect.type=701;emptyEffect.key=701;emptyEffect.durationTicks=3;
+    CHECK_FALSE(f.ability->configureOwnedEffect(701,emptyEffect).has_value());
+    ayt::combat::EffectDefinition effect{};
+    effect.type=700;effect.key=700;effect.durationTicks=3;effect.tags={99};
+    CHECK_TRUE(f.ability->configureOwnedEffect(700,effect).has_value());
+    DerivedDefinition definition;
+    definition.stages={
+        {.id=1,.amount=3,.lifetimeTicks=3},
+        {.id=2,.amount=4,.lifetimeTicks=3,.operation=StageOperation::Heal,
+            .intent=StageIntent::Beneficial},
+        {.id=3,.amount=5,.lifetimeTicks=3,.operation=StageOperation::DecreaseAttribute,
+            .attribute="mana"},
+        {.id=4,.amount=3,.lifetimeTicks=3,.operation=StageOperation::IncreaseAttribute,
+            .intent=StageIntent::Beneficial,.attribute="mana"},
+        {.id=5,.amount=20,.lifetimeTicks=3,.operation=StageOperation::SetAttribute,
+            .intent=StageIntent::Beneficial,.attribute="mana"},
+        {.id=6,.lifetimeTicks=3,.operation=StageOperation::OwnedEffect,.effect=700}};
+    CHECK_TRUE(f.ability->configureDerivedSkill(404,definition).has_value());
+    auto cast=f.ability->castDerived(f.source,404).value();
+    CHECK_TRUE(cast.emissions.size()==6);
+    auto hit=[&](std::size_t index) {
+        auto result=f.ability->reportDerivedHit(cast.emissions[index].emitter,f.target);
+        if(!result)throw std::runtime_error("stage "+std::to_string(index+1)+": "+result.error().message);
+        return *result;
+    };
+    CHECK_TRUE(hit(0).hit.actual==3);
+    CHECK_TRUE(hit(1).hit.actual==3);
+    CHECK_TRUE(hit(2).hit.actual==5);
+    CHECK_TRUE(hit(3).hit.actual==3);
+    auto set=hit(4);
+    CHECK_TRUE(set.interaction && set.interaction->decision.allowed);
+    CHECK_TRUE(f.stats(f.target).read(ayt::stats::statId("health"))->current==100);
+    CHECK_TRUE(f.stats(f.target).read(ayt::stats::statId("mana"))->current==20);
+    CHECK_TRUE(f.combat->setRelation(1,2,ayt::combat::Relation::Friendly).has_value());
+    auto denied=hit(5);
+    CHECK_TRUE(denied.interaction && !denied.interaction->decision.allowed);
+    CHECK_TRUE(f.combat->setRelation(1,2,ayt::combat::Relation::Hostile).has_value());
+    auto applied=hit(5);
+    CHECK_TRUE(applied.interaction && applied.interaction->decision.allowed);
+    CHECK_TRUE(f.combat->hasTag(f.target,99).value());
+    auto duplicate=f.ability->reportDerivedHit(cast.emissions[5].emitter,f.target);
+    CHECK_TRUE(!duplicate && duplicate.error().code==Error::Duplicate);
+    for(int i=0;i<4;++i)f.world.fixedUpdate(1.0f/60);
+    CHECK_FALSE(f.combat->hasTag(f.target,99).value());
+}
 TEST_SUITE_END

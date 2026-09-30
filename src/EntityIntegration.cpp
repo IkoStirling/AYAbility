@@ -27,14 +27,6 @@ ayt::combat::ActionResult gameplayResult(const ayt::combat::CombatOutcome& outco
     }
     return result;
 }
-ayt::combat::HitScope hitScope(DerivedHitMode mode) {
-    switch(mode) {
-    case DerivedHitMode::Part:return ayt::combat::HitScope::Part;
-    case DerivedHitMode::Segment:return ayt::combat::HitScope::Segment;
-    case DerivedHitMode::Periodic:return ayt::combat::HitScope::Periodic;
-    default:return ayt::combat::HitScope::Target;
-    }
-}
 } // namespace
 
 Result<void> AbilitySystem::bind(ayt::entity::World& world,ayt::combat::CombatSystem& combat,
@@ -227,11 +219,13 @@ Result<void> AbilitySystem::configureDerivedSkill(Id skill,DerivedDefinition def
        action->behaviorId!=derived::Behavior)
         return fail<void>(Error::Invalid,"skill is not an active derived behavior");
     if(auto valid=validateDerived(definition);!valid)return valid;
-    for(const auto& stage:definition.stages)if(stage.amountParameter) {
+    for(const auto& stage:definition.stages)for(auto [parameterId,unit]:
+        {std::pair{stage.amountParameter,Unit::Amount},
+         std::pair{stage.emittersParameter,Unit::Count}})if(parameterId) {
         const auto parameter=std::find_if(action->defaults.begin(),action->defaults.end(),
-            [&](const Parameter& value){return value.id==stage.amountParameter;});
-        if(parameter==action->defaults.end() || parameter->unit!=Unit::Amount)
-            return fail<void>(Error::Invalid,"derived stage amount parameter missing or wrong unit");
+            [&](const Parameter& value){return value.id==parameterId;});
+        if(parameter==action->defaults.end() || parameter->unit!=unit)
+            return fail<void>(Error::Invalid,"derived stage parameter missing or wrong unit");
     }
     _derivedSkills.insert_or_assign(skill,std::move(definition));
     return {};
@@ -251,6 +245,7 @@ void AbilitySystem::closeDerived(DerivedCastRecord& record) {
     for(auto& [id,stage]:record.stages)if(stage.open) {
         (void)_combat->hits().close(stage.attack);
         stage.open=false;
+        stage.ended=true;
     }
     for(auto& emission:record.emissions)emission.active=false;
 }
@@ -259,7 +254,6 @@ Result<DerivedCastResult> AbilitySystem::castDerived(ayt::entity::EntityHandle a
     const auto configured=_derivedSkills.find(skillId);
     if(configured==_derivedSkills.end())
         return fail<DerivedCastResult>(Error::Missing,"derived skill is not configured");
-    if(_derivedCasts.size()>=128)return fail<DerivedCastResult>(Error::Limit,"active derived cast limit");
     auto* entity=_world->getEntityByHandle(actor);
     auto* component=entity?entity->getComponent<ayt::combat::CombatComponent>():nullptr;
     if(!component || !component->life() || component->life()->phase()!=ayt::combat::LifePhase::Alive)
@@ -280,45 +274,17 @@ Result<DerivedCastResult> AbilitySystem::castDerived(ayt::entity::EntityHandle a
                 component->team,_combat->worldToken(),_nextEmitter);
             if(!made)return std::unexpected(made.error());
             release=std::move(*made);
-            auto [at,inserted]=_derivedCasts.try_emplace(event.execution);
-            if(!inserted)return fail<void>(Error::Duplicate,"derived cast already exists");
-            auto rollback=[&](){closeDerived(at->second);_derivedCasts.erase(at);};
-            try {
-                auto& record=at->second;
-                record.source=release.source;record.actor=actor;
-                record.statsGeneration=binding->statsGeneration;
-                record.combatGeneration=binding->combatGeneration;
-                record.emissions.reserve(release.emissions.size());
-                for(const auto& command:release.emissions)
-                    record.emissions.push_back({command.emitter,command.stage,true});
-                for(const auto& stage:release.stages)
-                    record.stages.emplace(stage.id,DerivedStageRecord{stage,{},
-                        event.tick+stage.lifetimeTicks,1,false});
-                for(const auto& stage:release.stages) {
-                    auto next=_combat->hits().nextAttackId(_combat->worldToken());
-                    if(!next){auto error=next.error();rollback();return fromCombat<void>(error);}
-                    ayt::combat::AttackRef attack{_combat->worldToken(),*next};
-                    auto opened=_combat->hits().open(attack,
-                        {hitScope(stage.hitMode),stage.intervalTicks},event.tick,
-                        event.tick+stage.lifetimeTicks);
-                    if(!opened){auto error=opened.error();rollback();return fromCombat<void>(error);}
-                    auto& current=record.stages.at(stage.id);
-                    current.attack=attack;current.open=true;
-                }
-                auto charged=chargeCost(actor,event.resolved.cost);
-                if(!charged){rollback();return charged;}
-                return {};
-            } catch(...) {
-                rollback();
-                return fail<void>(Error::Invalid,"derived cast preparation threw");
-            }
+            return prepareDelivery(actor,*binding,release,event.resolved.cost);
         });
     if(!activated)return std::unexpected(activated.error());
     _nextEmitter+=release.emissions.size();
-    return DerivedCastResult{std::move(*activated),std::move(release.emissions)};
+    auto& record=_derivedCasts.at(activated->execution);
+    return DerivedCastResult{std::move(*activated),
+        advanceDelivery(record,_combat->attributes().tick())};
 }
 Result<DerivedImpactResult> AbilitySystem::reportDerivedHit(Identity emitter,
-        ayt::entity::EntityHandle target,std::uint32_t part,std::uint32_t segment) {
+        ayt::entity::EntityHandle target,std::uint32_t part,std::uint32_t segment,
+        std::optional<std::array<float,3>> contact) {
     if(!_world || !_combat)return fail<DerivedImpactResult>(Error::Stale,"Ability World unavailable");
     DerivedCastRecord* record=nullptr;
     Id stageId=0;
@@ -332,7 +298,8 @@ Result<DerivedImpactResult> AbilitySystem::reportDerivedHit(Identity emitter,
     }
     if(!record)return fail<DerivedImpactResult>(Error::Missing,"derived emitter missing");
     auto stage=record->stages.find(stageId);
-    if(stage==record->stages.end() || !stage->second.open)
+    if(stage==record->stages.end() || !stage->second.open || !stage->second.emitted ||
+       stage->second.ended)
         return fail<DerivedImpactResult>(Error::Stale,"derived stage ended");
     const auto tick=_combat->attributes().tick();
     if(tick>=stage->second.endTick)
@@ -350,32 +317,94 @@ Result<DerivedImpactResult> AbilitySystem::reportDerivedHit(Identity emitter,
     auto& current=stage->second;
     if(!current.nextRequest || current.nextRequest>4096)
         return fail<DerivedImpactResult>(Error::Limit,"derived stage report limit");
-    const auto resource=combat->life()->policy().resource;
+    const auto operation=current.stage.operation;
+    const auto numeric=operation==StageOperation::Damage || operation==StageOperation::Heal ||
+        operation==StageOperation::IncreaseAttribute ||
+        operation==StageOperation::DecreaseAttribute;
+    const auto resource=current.stage.attribute.empty()?combat->life()->policy().resource:
+        ayt::stats::statId(current.stage.attribute);
     std::optional<ayt::entity::EntityHandle> sourceHandle;
     if(sourceLive)sourceHandle=record->actor;
-    auto prepared=_combat->attributes().prepareCalculation(target,resource,
-        ayt::stats::AttributeOp::Decrease,current.stage.amount,current.stage.recipe,sourceHandle);
-    if(!prepared)return fail<DerivedImpactResult>(Error::Invalid,prepared.error().message);
-    ayt::combat::SettlementRequest request;
-    request.hit={current.attack,current.nextRequest++,bound->ref,tick,part,segment};
-    request.source.instigator=ayt::combat::CombatantRef{record->source->actor.domain,
+    ayt::combat::SourceContext provenance;
+    provenance.instigator=ayt::combat::CombatantRef{record->source->actor.domain,
         record->source->actor.object,record->source->actor.generation};
-    request.source.directSource=ayt::combat::CombatantRef{
+    provenance.directSource=ayt::combat::CombatantRef{
         emitter.domain,emitter.object,emitter.generation};
-    request.source.team=record->source->team;
-    request.source.attribution=record->source->actor.object;
-    request.source.ability=record->source->skill;
-    request.source.effect=stageId;
-    request.source.abilityInstance=record->source->execution;
-    request.filter={ayt::combat::Operation::Damage,
-        ayt::combat::mask(ayt::combat::AllowedTarget::Hostile)};
-    request.resource=resource;
-    request.expectedVersion=stats->version();
-    request.calculation=prepared->context;
-    auto outcome=_combat->submit(*bound,std::move(request),*prepared->plan,prepared->inputs);
-    if(!outcome)return fromCombat<DerivedImpactResult>(outcome.error());
-    auto hit=gameplayResult(*outcome);
-    return DerivedImpactResult{record->source,std::move(hit),std::move(*outcome)};
+    provenance.team=record->source->team;
+    provenance.attribution=record->source->actor.object;
+    provenance.ability=record->source->skill?record->source->skill:record->source->action;
+    provenance.effect=stageId;
+    provenance.abilityInstance=record->source->execution;
+    const ayt::combat::HitRequest hitRequest{current.attack,current.nextRequest,
+        bound->ref,tick,part,segment};
+    DerivedImpactResult result;
+    result.source=record->source;
+    bool confirmed=false;
+    if(numeric) {
+        const bool decrease=operation==StageOperation::Damage ||
+            operation==StageOperation::DecreaseAttribute;
+        auto prepared=_combat->attributes().prepareCalculation(target,resource,
+            decrease?ayt::stats::AttributeOp::Decrease:ayt::stats::AttributeOp::Increase,
+            current.stage.amount,current.stage.recipe,sourceHandle);
+        if(!prepared)return fail<DerivedImpactResult>(Error::Invalid,prepared.error().message);
+        ayt::combat::SettlementRequest request;
+        request.hit=hitRequest;
+        request.source=provenance;
+        request.filter={decrease?ayt::combat::Operation::Damage:ayt::combat::Operation::Heal,
+            current.stage.allowedTargets};
+        request.resource=resource;
+        request.expectedVersion=stats->version();
+        request.calculation=prepared->context;
+        ++current.nextRequest;
+        auto outcome=_combat->submit(*bound,std::move(request),*prepared->plan,prepared->inputs);
+        if(!outcome)return fromCombat<DerivedImpactResult>(outcome.error());
+        result.hit=gameplayResult(*outcome);
+        confirmed=outcome->state==ayt::combat::OutcomeState::Applied;
+        result.settlement=std::move(*outcome);
+    } else {
+        if(!sourceLive)return fail<DerivedImpactResult>(Error::Stale,
+            "attribute set and owned effect require a live source");
+        auto reserved=_combat->hits().reserve(hitRequest);
+        if(!reserved)return fromCombat<DerivedImpactResult>(reserved.error());
+        ++current.nextRequest;
+        ayt::combat::InteractionPolicy policy{
+            current.stage.intent==StageIntent::Harmful?
+                ayt::combat::InteractionIntent::Harmful:
+                ayt::combat::InteractionIntent::Beneficial,
+            current.stage.allowedTargets};
+        ayt::combat::Result<ayt::combat::InteractionResult> interaction;
+        if(operation==StageOperation::SetAttribute)
+            interaction=_combat->interactAttribute(record->actor,target,
+                current.stage.attribute,ayt::stats::AttributeOp::Set,
+                current.stage.amount,policy,true,current.stage.recipe);
+        else interaction=_combat->applyOwnedEffect(record->actor,target,
+                *current.effect,policy,true);
+        if(!interaction) {
+            (void)_combat->hits().release(*reserved);
+            return fromCombat<DerivedImpactResult>(interaction.error());
+        }
+        result.interaction=std::move(*interaction);
+        confirmed=result.interaction->decision.allowed;
+        if(confirmed) {
+            if(!_combat->hits().complete(*reserved))std::terminate();
+            result.hit.kind=ayt::combat::OutcomeKind::Zero;
+            if(result.interaction->attribute) {
+                const auto actual=result.interaction->attribute->actual;
+                result.hit.actual=actual==std::numeric_limits<Value>::min()?
+                    std::numeric_limits<Value>::max():actual<0?-actual:actual;
+            }
+        } else {
+            (void)_combat->hits().release(*reserved);
+            result.hit.kind=ayt::combat::OutcomeKind::Rejected;
+        }
+    }
+    if(confirmed && !current.hit) {
+        current.hit=true;
+        if(contact)current.origin=contact;
+        triggerDependents(*record,stageId,StageTrigger::FirstConfirmedHit,tick,current.origin);
+        result.emissions=advanceDelivery(*record,tick);
+    }
+    return result;
 }
 Result<void> AbilitySystem::finishDerivedEmitter(Identity emitter) {
     for(auto at=_derivedCasts.begin();at!=_derivedCasts.end();++at) {
@@ -386,12 +415,17 @@ Result<void> AbilitySystem::finishDerivedEmitter(Identity emitter) {
         if(!found->active)return fail<void>(Error::Stale,"emitter already finished");
         found->active=false;
         auto& stage=record.stages.at(found->stage);
+        if(!stage.emitted || stage.ended)return fail<void>(Error::Stale,"emitter stage not active");
         if(std::none_of(record.emissions.begin(),record.emissions.end(),
             [&](const DerivedEmissionRecord& item){return item.active && item.stage==found->stage;})) {
             if(stage.open){(void)_combat->hits().close(stage.attack);stage.open=false;}
+            stage.ended=true;
+            triggerDependents(record,found->stage,StageTrigger::StageFinished,
+                _combat->attributes().tick(),stage.origin);
+            (void)advanceDelivery(record,_combat->attributes().tick());
         }
-        if(std::none_of(record.emissions.begin(),record.emissions.end(),
-            [](const DerivedEmissionRecord& item){return item.active;}))_derivedCasts.erase(at);
+        if(std::all_of(record.stages.begin(),record.stages.end(),
+            [](const auto& item){return item.second.ended;}))_derivedCasts.erase(at);
         return {};
     }
     return fail<void>(Error::Missing,"derived emitter missing");
@@ -418,12 +452,9 @@ void AbilitySystem::onUpdate(float) {
         if(record.source->sourceLoss==SourceLossPolicy::Cancel && !derivedSourceAvailable(record)) {
             closeDerived(record);at=_derivedCasts.erase(at);continue;
         }
-        for(auto& [id,stage]:record.stages)if(stage.open && tick>=stage.endTick) {
-            (void)_combat->hits().close(stage.attack);stage.open=false;
-            for(auto& emission:record.emissions)if(emission.stage==id)emission.active=false;
-        }
-        if(std::none_of(record.emissions.begin(),record.emissions.end(),
-            [](const DerivedEmissionRecord& item){return item.active;}))at=_derivedCasts.erase(at);
+        (void)advanceDelivery(record,tick);
+        if(std::all_of(record.stages.begin(),record.stages.end(),
+            [](const auto& item){return item.second.ended;}))at=_derivedCasts.erase(at);
         else ++at;
     }
     for(auto at=_actors.begin();at!=_actors.end();) {

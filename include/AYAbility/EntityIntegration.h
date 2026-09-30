@@ -4,6 +4,7 @@
 #include <AYCombat/EntityIntegration.h>
 
 namespace ayt::ability {
+struct AuthoringDocument;
 struct FireActionResult {
     FireEvent shot;
     std::vector<ayt::combat::ActionResult> hits;
@@ -26,6 +27,14 @@ struct DerivedImpactResult {
     std::shared_ptr<const ReleaseSnapshot> source;
     ayt::combat::ActionResult hit;
     ayt::combat::CombatOutcome settlement;
+    /// Present for SetAttribute and Combat-owned effect stages.
+    std::optional<ayt::combat::InteractionResult> interaction;
+    /// Newly triggered emissions, also available through takeEmissions for delivery hosts.
+    std::vector<EmissionCommand> emissions;
+};
+struct FireDeliveryResult {
+    FireEvent shot;
+    std::vector<EmissionCommand> emissions;
 };
 /// Composition-time candidate factory. Each cast owns the returned callback until its area ends.
 using AreaProviderFactory=std::function<ayt::combat::Result<ayt::combat::AreaCandidateProvider>(
@@ -33,7 +42,8 @@ using AreaProviderFactory=std::function<ayt::combat::Result<ayt::combat::AreaCan
 
 /// World-owned gameplay entry. Equipment state and character skill state are coordinated here;
 /// Stats owns cost values and Combat owns target permission/damage/life publication.
-/// Fire is immediate; Area and Derived keep independent delivery lifetimes.
+/// Immediate fire, staged fire and Derived share the same Stats/Combat authority;
+/// staged delivery and Area each keep their own lifetime.
 class AbilitySystem final : public ayt::entity::ISystem {
 public:
     const char* getName() const override { return "AbilitySystem"; }
@@ -50,6 +60,9 @@ public:
     Result<FireActionResult> fireAt(ayt::entity::EntityHandle actor,
         std::optional<ayt::entity::EntityHandle> target={},Id activeSkill=0,
         std::string_view recipe={});
+    /// A configured equipment action uses the same stage timeline as an active Derived skill.
+    Result<void> configureFireDelivery(Id configuration,DerivedDefinition definition);
+    Result<FireDeliveryResult> fireDelivered(ayt::entity::EntityHandle actor,Id activeSkill=0);
     /// Register authored area behavior once; castArea then needs only actor and granted skill.
     Result<void> configureAreaSkill(Id skill,ayt::combat::AreaDefinition definition,
         AreaProviderFactory provider);
@@ -57,13 +70,18 @@ public:
     Result<ayt::combat::AreaSweep> stopArea(std::uint64_t area);
     /// Configure one skill's bounded stages at composition time; casts freeze the current values.
     Result<void> configureDerivedSkill(Id skill,DerivedDefinition definition);
+    /// Bind an authored effect reference used by one or more delivery stages.
+    Result<void> configureOwnedEffect(Id reference,ayt::combat::EffectDefinition definition);
     /// Cast once, charging Stats and opening Combat hit windows before publishing spawn commands.
     Result<DerivedCastResult> castDerived(ayt::entity::EntityHandle actor,Id skill);
     /// Physics/delivery host reports a candidate; Ability handles Combat, Stats and hit dedup.
     Result<DerivedImpactResult> reportDerivedHit(Identity emitter,
-        ayt::entity::EntityHandle target,std::uint32_t part=0,std::uint32_t segment=0);
+        ayt::entity::EntityHandle target,std::uint32_t part=0,std::uint32_t segment=0,
+        std::optional<std::array<float,3>> contact={});
     Result<void> finishDerivedEmitter(Identity emitter);
     Result<void> cancelDerivedCast(std::uint64_t execution);
+    /// Drains commands whose fixed-tick trigger has fired; stale/cancelled emissions are omitted.
+    std::vector<EmissionCommand> takeEmissions();
     Result<EquipmentState> equipment(Id instance) const;
     Result<GrantedSkill> skill(ayt::entity::EntityHandle actor,Id skill) const;
 private:
@@ -82,11 +100,15 @@ private:
     };
     std::map<Id,AreaSkill> _areaSkills;
     std::map<Id,DerivedDefinition> _derivedSkills;
+    std::map<Id,DerivedDefinition> _fireDeliveries;
+    std::map<Id,ayt::combat::EffectDefinition> _ownedEffects;
     struct DerivedStageRecord {
         DerivedStage stage;
         ayt::combat::AttackRef attack;
-        std::uint64_t endTick=0,nextRequest=1;
-        bool open=false;
+        std::uint64_t endTick=0,nextRequest=1,dueTick=0;
+        bool open=false,triggered=false,emitted=false,ended=false,hit=false;
+        std::optional<ayt::combat::EffectDefinition> effect;
+        std::optional<std::array<float,3>> origin;
     };
     struct DerivedEmissionRecord { Identity emitter; Id stage=0; bool active=true; };
     struct DerivedCastRecord {
@@ -94,12 +116,20 @@ private:
         ayt::entity::EntityHandle actor;
         std::uint64_t statsGeneration=0,combatGeneration=0;
         std::map<Id,DerivedStageRecord> stages;
+        std::vector<Id> stageOrder;
         std::vector<DerivedEmissionRecord> emissions;
     };
     std::map<Id,DerivedCastRecord> _derivedCasts;
+    std::vector<EmissionCommand> _emissionQueue;
     Id _nextEmitter=1;
     bool derivedSourceAvailable(const DerivedCastRecord&) const;
     void closeDerived(DerivedCastRecord&);
+    Result<void> prepareDelivery(ayt::entity::EntityHandle actor,
+        const ayt::combat::EntityBinding& binding,DerivedRelease& release,
+        const std::optional<std::pair<std::string,Value>>& cost);
+    std::vector<EmissionCommand> advanceDelivery(DerivedCastRecord&,std::uint64_t tick);
+    void triggerDependents(DerivedCastRecord&,Id predecessor,StageTrigger trigger,
+        std::uint64_t tick,std::optional<std::array<float,3>> origin={});
     Result<Identity> actorIdentity(ayt::entity::EntityHandle) const;
     Identity equipmentIdentity(Id instance) const noexcept;
     Result<void> chargeCost(ayt::entity::EntityHandle actor,
@@ -110,4 +140,7 @@ private:
 Result<void> registerAbilityGameplayComponents(ayt::entity::ComponentRegistry& registry);
 /// Installs/gets the World-owned Stats, Combat and Ability systems in their Sim lanes.
 Result<AbilitySystem*> installAbility(ayt::entity::World& world,std::shared_ptr<const Catalog> catalog);
+/// Compile a versioned document and install all configured delivery stages together.
+Result<AbilitySystem*> installAbility(ayt::entity::World& world,
+    const AuthoringDocument& document);
 } // namespace ayt::ability

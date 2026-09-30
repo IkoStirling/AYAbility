@@ -1,7 +1,7 @@
 # AYAbility
 
-Local-only, no-remote action and skill runtime. Current delivery is the independent
-Core definition resolver and headless Fire/Area behaviors. Fire uses distinct
+Local-only, no-remote action and skill runtime. Core resolves definitions and
+executes headless Fire, Area and Derived behaviors. Fire uses distinct
 equipment configurations; equipment instances own ammunition/cadence, while actor
 skill grants own levels and skill cooldowns. All time inputs are caller-supplied
 fixed Sim ticks. Author definitions are immutable after catalog compilation and
@@ -32,21 +32,41 @@ membership and effect lifetimes, including source-death cleanup. Normal Stats
 capacity policies apply to life-capacity modifiers; they do not restore an exact
 pre-effect HP snapshot.
 
-Derived active skills declare bounded, named hit stages at composition time.
-`castDerived(actor, skill)` freezes the skill level, resolved stage amounts,
-optional equipped provider, source team and cast identity; it charges Stats once
-and returns immutable spawn commands. A projectile or other delivery host owns
-movement and calls `reportDerivedHit(emitter, target)` on contact. Ability uses
-Combat to check target permission and deduplicate hits, and Stats for the chosen
-recipe and HP mutation. Multiple emitters in one stage share a hit window, while
-different stages can hit the same target. `finishDerivedEmitter` and
-`cancelDerivedCast` close windows early. The default source-loss policy cancels
-on death/destruction; `ContinueFromSnapshot` allows detached delayed hits.
-Explicit Stats recipes that need live source attributes cannot run after the
-source disappears unless the recipe supports snapshot-only inputs.
+Fire delivery and Derived active skills share one bounded stage timeline.
+Configure a fire equipment configuration with `configureFireDelivery`, then call
+`fireDelivered(actor, optionalSkill)`; an active Derived skill instead calls
+`castDerived(actor, skill)`. Both freeze the resolved values, source and emitter
+identities, charge Stats once, and open Combat hit windows before publishing
+commands. Stages can start on release, first confirmed hit or predecessor end,
+with fixed-tick delays. Contact positions propagate into dependent stages, so
+an explosion can originate at the actual impact. Damage, heal, non-HP attribute
+increase/decrease/set and Combat-owned effects use explicit target masks.
+Multiple emitters in one stage share a hit window; each stage has its own.
+`finishDerivedEmitter` and `cancelDerivedCast` close windows early.
 
-Loose data files, an editor, arbitrary behavior graphs, full area release
-provenance, Combo, projectile movement/physics adapters and checkpointing are not implemented.
+`AYAbility::Physics2D` is an optional real Box2D adapter. Install it once after
+Ability with `installAbility2D(world, ability, physicsManager)` and configure
+world-space stage velocity, radius and query layer once. It drains Ability's
+emissions during fixed Sim, raycasts moving contact/fragment/return stages,
+overlaps explosion/hazard stages, maps 2D bodies to Entity targets, and reports
+hits back to Ability. Keep the physics manager alive through World shutdown.
+Register Entity physics components before sealing the component registry and
+attach each target's 2D `RigidBodyComponent` to its actual Box2D body handle.
+The default source-loss policy cancels on death/destruction;
+`ContinueFromSnapshot` allows detached numeric hits. Explicit Stats recipes
+that need live source attributes, attribute Set and Combat-owned effect stages
+require a live source.
+
+`AYAbility::Authoring` loads and saves a version-1 loose JSON document containing
+actions, equipment configurations, skill growth tracks and stage definitions.
+`compileAuthoring` validates references and units before installation;
+`installAbility(world, document)` installs the catalog and delivery definitions
+together. Combat effect references are declared in the document and bound to
+actual Combat effect definitions at composition time. A failed parse or compile
+does not mutate an already installed catalog.
+
+An editor, arbitrary behavior graphs, full area release provenance, Combo,
+3D delivery, exact HP snapshot restoration and checkpointing remain unimplemented.
 The [execution plan](../../AYDocs/AYABILITY-IMPLEMENTATION-PLAN.md) tracks those
 stages. The module has no remote and does not require renderer, input devices or
 physics to build its Core.

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "actions": [
+    {
+      "id": 30,
+      "behaviorId": 3,
+      "defaults": [
+        {"id": 1, "unit": 1, "value": 6},
+        {"id": 55, "unit": 0, "value": 10}
+      ]
+    }
+  ],
+  "skills": [
+    {"id": 404, "action": 30, "kind": 1, "maxLevel": 1}
+  ],
+  "derivedSkills": [
+    {
+      "owner": 404,
+      "definition": {
+        "sourceLoss": 0,
+        "stages": [
+          {"id": 1, "kind": 0, "amountParameter": 55, "lifetimeTicks": 3},
+          {"id": 2, "kind": 1, "trigger": 1, "predecessor": 1,
+           "amount": 5, "lifetimeTicks": 1}
+        ]
+      }
+    }
+  ]
+}
