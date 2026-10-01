@@ -318,9 +318,7 @@ Result<DerivedImpactResult> AbilitySystem::reportDerivedHit(Identity emitter,
     if(!current.nextRequest || current.nextRequest>4096)
         return fail<DerivedImpactResult>(Error::Limit,"derived stage report limit");
     const auto operation=current.stage.operation;
-    const auto numeric=operation==StageOperation::Damage || operation==StageOperation::Heal ||
-        operation==StageOperation::IncreaseAttribute ||
-        operation==StageOperation::DecreaseAttribute;
+    const auto numeric=operation==StageOperation::Damage || operation==StageOperation::Heal;
     const auto resource=current.stage.attribute.empty()?combat->life()->policy().resource:
         ayt::stats::statId(current.stage.attribute);
     std::optional<ayt::entity::EntityHandle> sourceHandle;
@@ -341,8 +339,7 @@ Result<DerivedImpactResult> AbilitySystem::reportDerivedHit(Identity emitter,
     result.source=record->source;
     bool confirmed=false;
     if(numeric) {
-        const bool decrease=operation==StageOperation::Damage ||
-            operation==StageOperation::DecreaseAttribute;
+        const bool decrease=operation==StageOperation::Damage;
         auto prepared=_combat->attributes().prepareCalculation(target,resource,
             decrease?ayt::stats::AttributeOp::Decrease:ayt::stats::AttributeOp::Increase,
             current.stage.amount,current.stage.recipe,sourceHandle);
@@ -362,8 +359,10 @@ Result<DerivedImpactResult> AbilitySystem::reportDerivedHit(Identity emitter,
         confirmed=outcome->state==ayt::combat::OutcomeState::Applied;
         result.settlement=std::move(*outcome);
     } else {
-        if(!sourceLive)return fail<DerivedImpactResult>(Error::Stale,
-            "attribute set and owned effect require a live source");
+        if(!sourceLive && (operation==StageOperation::SetAttribute ||
+           operation==StageOperation::OwnedEffect))
+            return fail<DerivedImpactResult>(Error::Stale,
+                "attribute set and owned effect require a live source");
         auto reserved=_combat->hits().reserve(hitRequest);
         if(!reserved)return fromCombat<DerivedImpactResult>(reserved.error());
         ++current.nextRequest;
@@ -373,12 +372,18 @@ Result<DerivedImpactResult> AbilitySystem::reportDerivedHit(Identity emitter,
                 ayt::combat::InteractionIntent::Beneficial,
             current.stage.allowedTargets};
         ayt::combat::Result<ayt::combat::InteractionResult> interaction;
-        if(operation==StageOperation::SetAttribute)
-            interaction=_combat->interactAttribute(record->actor,target,
-                current.stage.attribute,ayt::stats::AttributeOp::Set,
-                current.stage.amount,policy,true,current.stage.recipe);
-        else interaction=_combat->applyOwnedEffect(record->actor,target,
+        if(operation==StageOperation::OwnedEffect)
+            interaction=_combat->applyOwnedEffect(record->actor,target,
                 *current.effect,policy,true);
+        else {
+            const auto attributeOperation=operation==StageOperation::SetAttribute?
+                ayt::stats::AttributeOp::Set:
+                operation==StageOperation::IncreaseAttribute?
+                    ayt::stats::AttributeOp::Increase:ayt::stats::AttributeOp::Decrease;
+            interaction=_combat->interactAttributeFromContext(provenance,sourceHandle,target,
+                current.stage.attribute,attributeOperation,current.stage.amount,policy,true,
+                current.stage.recipe);
+        }
         if(!interaction) {
             (void)_combat->hits().release(*reserved);
             return fromCombat<DerivedImpactResult>(interaction.error());

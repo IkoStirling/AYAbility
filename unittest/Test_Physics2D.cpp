@@ -269,6 +269,7 @@ TEST_CASE(physics_area_tracks_selected_friends_without_manual_candidate_sync) {
     CHECK_TRUE(ability->grant(source,303,1).has_value());
     ayt::combat::AreaDefinition area;
     area.effect.type=901;area.effect.key=901;area.effect.tags={77};
+    area.maxCandidates=2;
     area.permission={ayt::combat::InteractionIntent::Beneficial,
         ayt::combat::mask(ayt::combat::AllowedTarget::Friendly)};
     area.permission.requireSelected=true;
@@ -304,6 +305,7 @@ TEST_CASE(physics_area_tracks_selected_friends_without_manual_candidate_sync) {
     CHECK_TRUE(manager->world2D()->createCollider(secondShape,secondShapeHandle)==
         ayt::physics::PhysResult::Ok);
     auto otherBody=addBody(otherEntity,0.6f);
+    addBody(world.createEntity(),0.7f); // Geometry without Stats/Combat is not an area candidate.
     CHECK_TRUE(manager->stepAndWait(1.0f/60)==ayt::physics::PhysResult::Ok);
     auto cast=ability->castArea(source,303).value();
     world.fixedUpdate(1.0f/60);

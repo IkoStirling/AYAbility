@@ -389,4 +389,38 @@ TEST_CASE(delivery_stages_route_attributes_and_owned_effects) {
     for(int i=0;i<4;++i)f.world.fixedUpdate(1.0f/60);
     CHECK_FALSE(f.combat->hasTag(f.target,99).value());
 }
+TEST_CASE(derived_scalar_attributes_use_authored_intent_and_source_snapshot) {
+    WorldFixture f;
+    CHECK_TRUE(f.ability->grant(f.source,404,1).has_value());
+    DerivedDefinition definition;
+    definition.sourceLoss=SourceLossPolicy::ContinueFromSnapshot;
+    definition.stages={
+        {.id=1,.amount=5,.lifetimeTicks=3,.operation=StageOperation::IncreaseAttribute,
+            .intent=StageIntent::Harmful,.attribute="health_max",
+            .allowedTargets=ayt::combat::mask(ayt::combat::AllowedTarget::Hostile)},
+        {.id=2,.amount=3,.lifetimeTicks=3,.operation=StageOperation::DecreaseAttribute,
+            .intent=StageIntent::Beneficial,.attribute="health_max",
+            .allowedTargets=ayt::combat::mask(ayt::combat::AllowedTarget::Friendly)},
+        {.id=3,.amount=2,.lifetimeTicks=3,.operation=StageOperation::IncreaseAttribute,
+            .intent=StageIntent::Harmful,.attribute="health_max",
+            .allowedTargets=ayt::combat::mask(ayt::combat::AllowedTarget::Hostile)}};
+    CHECK_TRUE(f.ability->configureDerivedSkill(404,definition).has_value());
+    auto cast=f.ability->castDerived(f.source,404).value();
+    auto* target=f.world.getEntityByHandle(f.target)->getComponent<ayt::combat::CombatComponent>();
+    target->capabilities=ayt::combat::mask(ayt::combat::Capability::Damageable);
+    auto harmful=f.ability->reportDerivedHit(cast.emissions[0].emitter,f.target);
+    CHECK_TRUE(harmful && harmful->interaction && harmful->interaction->decision.allowed);
+    CHECK_INT_EQ(f.stats(f.target).read(ayt::stats::statId("health_max"))->base,105);
+    CHECK_TRUE(f.combat->setRelation(1,2,ayt::combat::Relation::Friendly).has_value());
+    target->capabilities=ayt::combat::mask(ayt::combat::Capability::Healable);
+    auto beneficial=f.ability->reportDerivedHit(cast.emissions[1].emitter,f.target);
+    CHECK_TRUE(beneficial && beneficial->interaction && beneficial->interaction->decision.allowed);
+    CHECK_INT_EQ(f.stats(f.target).read(ayt::stats::statId("health_max"))->base,102);
+    CHECK_TRUE(f.combat->setRelation(1,2,ayt::combat::Relation::Hostile).has_value());
+    target->capabilities=ayt::combat::mask(ayt::combat::Capability::Damageable);
+    f.world.destroyEntity(f.world.getEntityByHandle(f.source));
+    auto snapshot=f.ability->reportDerivedHit(cast.emissions[2].emitter,f.target);
+    CHECK_TRUE(snapshot && snapshot->interaction && snapshot->interaction->decision.allowed);
+    CHECK_INT_EQ(f.stats(f.target).read(ayt::stats::statId("health_max"))->base,104);
+}
 TEST_SUITE_END

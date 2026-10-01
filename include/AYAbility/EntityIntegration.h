@@ -27,7 +27,7 @@ struct DerivedImpactResult {
     std::shared_ptr<const ReleaseSnapshot> source;
     ayt::combat::ActionResult hit;
     ayt::combat::CombatOutcome settlement;
-    /// Present for SetAttribute and Combat-owned effect stages.
+    /// Present for non-HP attribute and Combat-owned effect stages.
     std::optional<ayt::combat::InteractionResult> interaction;
     /// Newly triggered emissions, also available through takeEmissions for delivery hosts.
     std::vector<EmissionCommand> emissions;
