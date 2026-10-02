@@ -3,7 +3,10 @@
 #include <AYAbility/Authoring.h>
 #include <AYEntity.h>
 #include <AYEntity/EntityModule.h>
+#include <AYEntity/ActorClassAsset.h>
 #include "Fixtures.h"
+#include <nlohmann/json.hpp>
+#include <filesystem>
 #include <set>
 #include <stdexcept>
 
@@ -49,6 +52,54 @@ struct WorldFixture {
 };
 }
 TEST_SUITE(AbilityEntityTests)
+TEST_CASE(repeatable_authored_components_initialize_on_first_use_independent_of_display_name) {
+    WorldFixture f;
+    auto* actor=f.world.getEntityByHandle(f.source);
+    auto* first=actor->createComponent<ayt::ability::AbilityEquipmentComponent>();
+    auto* second=actor->createComponent<ayt::ability::AbilityEquipmentComponent>();
+    auto* skill=actor->createComponent<ayt::ability::AbilitySkillComponent>();
+    CHECK_NOT_NULL(first);CHECK_NOT_NULL(second);CHECK_NOT_NULL(skill);
+    first->configuration=101;first->equipped=true;
+    second->configuration=102;second->equipped=false;
+    skill->skillId=202;skill->level=1;
+    CHECK_TRUE(actor->setComponentDisplayName(first,"Renamed primary"));
+    auto fired=f.ability->fireAt(f.source,f.target,202);
+    CHECK_TRUE(fired.has_value());
+    CHECK_TRUE(fired->shot.resolved.equipmentConfig==101);
+    CHECK_TRUE(fired->shot.ammunitionRemaining==5);
+    CHECK_TRUE(f.ability->skill(f.source,202)->level==1);
+    CHECK_TRUE(f.stats(f.target).read(ayt::stats::statId("health"))->current==90);
+}
+TEST_CASE(actor_class_with_stats_combat_and_ability_is_playable_before_first_tick) {
+    WorldFixture f;
+    auto schema=ayt::stats::Schema::compile({
+        {.name="health",.shape=ayt::stats::Shape::Pool,.current=100,.capacity=100},
+        {.name="mana",.shape=ayt::stats::Shape::Pool,.current=80,.capacity=80}}).value();
+    const auto definitions=ayt::stats::encodeDefinitions(*schema).value();
+    const auto root=std::filesystem::path(ayt::test::testTmpPath("ability-actor-assets"));
+    std::filesystem::create_directories(root/"actors");
+    ayt::entity::ActorClassAsset authored;
+    authored.id="AbilityActor";
+    authored.components={
+        {"StatsComponent",nlohmann::json{{"definitionsJson",definitions}}.dump()},
+        {"CombatComponent",nlohmann::json{{"team",1},{"lifeResourceName","health"}}.dump()},
+        {"AbilityEquipmentComponent",R"({"configuration":101,"equipped":true})"},
+        {"AbilityEquipmentComponent",R"({"configuration":102,"equipped":false})"},
+        {"AbilitySkillComponent",R"({"skillId":202,"level":1})"}};
+    authored.components[2].instanceId=ayt::entity::makeComponentInstanceId();
+    authored.components[3].instanceId=ayt::entity::makeComponentInstanceId();
+    std::string error;
+    if(!ayt::entity::saveActorClassAsset((root/"actors"/"AbilityActor.act").string(),authored,&error))
+        throw std::runtime_error("save Ability Actor: "+error);
+    auto* actor=f.world.createEntity();
+    if(!ayt::entity::instantiateActorClass(*actor,authored,"actors/AbilityActor.act",
+        root.string(),&error))throw std::runtime_error("instantiate Ability Actor: "+error);
+    const auto handle=f.world.getEntityHandle(actor->getId());
+    auto fired=f.ability->fireAt(handle,f.target,202);
+    if(!fired)throw std::runtime_error("fire Ability Actor: "+fired.error().message);
+    CHECK_TRUE(fired->shot.resolved.equipmentConfig==101);
+    CHECK_TRUE(f.stats(f.target).read(ayt::stats::statId("health"))->current==90);
+}
 TEST_CASE(strict_document_rejects_missing_effects_before_world_installation) {
     auto& world=ayt::entity::World::processWorld();
     ayt::entity::World::setActiveWorld(nullptr);

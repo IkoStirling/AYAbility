@@ -1,10 +1,14 @@
 #include <AYAbility/EntityIntegration.h>
 #include <AYEntity.h>
+#include <AYEntity/ComponentRegistration.h>
 #include <array>
 #include <exception>
 #include <limits>
+#include <set>
 
 namespace ayt::ability {
+AY_FINALIZE_REGISTRATION_METADATA(AbilityEquipmentComponent)
+AY_FINALIZE_REGISTRATION_METADATA(AbilitySkillComponent)
 namespace {
 template<class T> Result<T> fail(Error code,std::string message) {
     return std::unexpected(Diagnostic{code,std::move(message),{}});
@@ -38,15 +42,69 @@ Result<void> AbilitySystem::bind(ayt::entity::World& world,ayt::combat::CombatSy
     if(!_runtime) {_catalog=std::move(catalog);_runtime.emplace(_catalog);}
     return {};
 }
-Result<Identity> AbilitySystem::actorIdentity(ayt::entity::EntityHandle handle) const {
+Result<void> AbilitySystem::initializeAuthored(ayt::entity::EntityHandle handle,
+        Identity key,ActorRecord& record) {
+    if(record.authoredInitialized)return {};
+    auto* entity=_world->getEntityByHandle(handle);
+    if(!entity)return fail<void>(Error::Stale,"authored actor unavailable");
+    const auto equipment=entity->getComponents<AbilityEquipmentComponent>();
+    const auto skills=entity->getComponents<AbilitySkillComponent>();
+    std::set<Id> seenSkills;
+    std::size_t equippedCount=0;
+    for(const auto* item:equipment) {
+        if(!item->configuration || !_catalog->findEquipment(item->configuration))
+            return fail<void>(Error::Invalid,"authored equipment configuration missing");
+        equippedCount+=item->equipped?1:0;
+    }
+    if(equippedCount>1)return fail<void>(Error::Invalid,"multiple authored equipment slots equipped");
+    for(const auto* item:skills) {
+        const auto* definition=_catalog->findSkill(item->skillId);
+        if(!definition || !item->level || item->level>definition->maxLevel ||
+           !seenSkills.insert(item->skillId).second)
+            return fail<void>(Error::Invalid,"invalid or duplicate authored skill grant");
+    }
+    std::optional<Id> selected;
+    for(const auto* item:equipment) {
+        if(_nextAuthoredEquipment==std::numeric_limits<Id>::max())
+            return fail<void>(Error::Limit,"authored equipment identity exhausted");
+        const auto instance=_nextAuthoredEquipment++;
+        auto added=_runtime->addEquipment(key,equipmentIdentity(instance),item->configuration);
+        if(!added) {
+            (void)_runtime->removeActor(key);
+            return added;
+        }
+        if(item->equipped)selected=instance;
+    }
+    for(const auto* item:skills) {
+        auto granted=_runtime->grant(key,item->skillId,item->level);
+        if(!granted) {
+            (void)_runtime->removeActor(key);
+            return granted;
+        }
+    }
+    if(selected) {
+        auto equipped=_runtime->equip(key,equipmentIdentity(*selected));
+        if(!equipped) {
+            (void)_runtime->removeActor(key);
+            return equipped;
+        }
+    }
+    record.authoredInitialized=true;
+    return {};
+}
+Result<Identity> AbilitySystem::actorIdentity(ayt::entity::EntityHandle handle) {
     if(!_world || !_combat)return fail<Identity>(Error::Stale,"Ability World unavailable");
     auto binding=ayt::combat::bindCombatant(*_world,handle);
     if(!binding)return fromCombat<Identity>(binding.error());
     auto key=identity(*binding);
-    if(auto record=_actors.find(key);record!=_actors.end()) {
-        if(record->second.statsGeneration!=binding->statsGeneration ||
-           record->second.combatGeneration!=binding->combatGeneration)
-            return fail<Identity>(Error::Stale,"actor component replaced");
+    auto [record,inserted]=_actors.try_emplace(key,ActorRecord{handle,binding->statsGeneration,
+        binding->combatGeneration});
+    if(record->second.statsGeneration!=binding->statsGeneration ||
+       record->second.combatGeneration!=binding->combatGeneration)
+        return fail<Identity>(Error::Stale,"actor component replaced");
+    if(auto ready=initializeAuthored(handle,key,record->second);!ready) {
+        if(inserted)_actors.erase(record);
+        return std::unexpected(ready.error());
     }
     return key;
 }
@@ -55,6 +113,7 @@ Identity AbilitySystem::equipmentIdentity(Id instance) const noexcept {
 }
 Result<void> AbilitySystem::addEquipment(ayt::entity::EntityHandle actor,Id equipmentInstance,Id configuration) {
     if(!_world || !_runtime)return fail<void>(Error::Stale,"Ability World unavailable");
+    if(auto ready=actorIdentity(actor);!ready)return std::unexpected(ready.error());
     auto binding=ayt::combat::bindCombatant(*_world,actor);
     if(!binding)return fromCombat<void>(binding.error());
     auto key=identity(*binding);
@@ -73,6 +132,7 @@ Result<void> AbilitySystem::equip(ayt::entity::EntityHandle actor,Id equipmentIn
 }
 Result<void> AbilitySystem::grant(ayt::entity::EntityHandle actor,Id skillId,std::uint32_t level) {
     if(!_world || !_runtime)return fail<void>(Error::Stale,"Ability World unavailable");
+    if(auto ready=actorIdentity(actor);!ready)return std::unexpected(ready.error());
     auto binding=ayt::combat::bindCombatant(*_world,actor);
     if(!binding)return fromCombat<void>(binding.error());
     auto key=identity(*binding);
@@ -450,7 +510,7 @@ Result<EquipmentState> AbilitySystem::equipment(Id instance) const {
     if(!_runtime)return fail<EquipmentState>(Error::Stale,"Ability runtime unavailable");
     return _runtime->equipment(equipmentIdentity(instance));
 }
-Result<GrantedSkill> AbilitySystem::skill(ayt::entity::EntityHandle actor,Id skillId) const {
+Result<GrantedSkill> AbilitySystem::skill(ayt::entity::EntityHandle actor,Id skillId) {
     auto key=actorIdentity(actor);if(!key)return std::unexpected(key.error());
     return _runtime->skill(*key,skillId);
 }
@@ -480,6 +540,18 @@ void AbilitySystem::onUpdate(float) {
 Result<void> registerAbilityGameplayComponents(ayt::entity::ComponentRegistry& registry) {
     auto result=ayt::combat::registerCombatGameplayComponents(registry);
     if(!result)return fromCombat<void>(result.error());
+    if(!registry.find<AbilityEquipmentComponent>()) {
+        auto registered=ayt::entity::registerSceneComponent<AbilityEquipmentComponent>(registry,
+            "AbilityEquipmentComponent","Ability Equipment","Gameplay",nullptr,
+            ayt::entity::ComponentMultiplicity::Multiple);
+        if(!registered)return fail<void>(Error::Invalid,registered.message());
+    }
+    if(!registry.find<AbilitySkillComponent>()) {
+        auto registered=ayt::entity::registerSceneComponent<AbilitySkillComponent>(registry,
+            "AbilitySkillComponent","Ability Skill","Gameplay",nullptr,
+            ayt::entity::ComponentMultiplicity::Multiple);
+        if(!registered)return fail<void>(Error::Invalid,registered.message());
+    }
     return {};
 }
 Result<AbilitySystem*> installAbility(ayt::entity::World& world,std::shared_ptr<const Catalog> catalog) {

@@ -77,6 +77,17 @@ together. Combat effect references are declared in the document and bound to
 actual Combat effect definitions at composition time. A failed parse or compile
 does not mutate an already installed catalog.
 
+An Actor class can author repeatable `AbilityEquipmentComponent` and
+`AbilitySkillComponent` instances alongside Stats and Combat. Each equipment
+instance names a configuration and one may set `equipped`; each skill instance
+names a skill and level. `registerAbilityGameplayComponents` registers all four
+component types. The first Ability action hydrates them immediately, including
+after Actor/Scene loading before the first Sim tick. Changing an instance's
+display name never changes gameplay identity. Equipment configuration and skill
+grants must exist in the installed catalog; duplicate grants or multiple equipped
+slots are rejected. These components are authoring defaults, not live ammo or
+cooldown checkpoints.
+
 An editor, arbitrary behavior graphs, full area release provenance, Combo,
 3D delivery, exact HP snapshot restoration and checkpointing remain unimplemented.
 The [execution plan](../../AYDocs/AYABILITY-IMPLEMENTATION-PLAN.md) tracks those

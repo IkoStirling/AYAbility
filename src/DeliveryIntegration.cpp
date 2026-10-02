@@ -210,6 +210,7 @@ bool AbilitySystem::emitterActive(Identity emitter) const noexcept {
     return false;
 }
 Result<FireDeliveryResult> AbilitySystem::fireDelivered(ayt::entity::EntityHandle actor,Id activeSkill) {
+    // Actor identity also hydrates authored equipment and skills before a staged release.
     auto key=actorIdentity(actor);if(!key)return std::unexpected(key.error());
     auto equipped=_runtime->equipped(*key);
     if(!equipped)return std::unexpected(equipped.error());

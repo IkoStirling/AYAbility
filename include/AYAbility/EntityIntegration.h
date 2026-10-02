@@ -5,6 +5,25 @@
 
 namespace ayt::ability {
 struct AuthoringDocument;
+#define AY_CURRENT_CLASS AbilityEquipmentComponent
+/// One authored equipment slot. Multiple instances may be placed on an Actor;
+/// its display name is presentation only, never a gameplay key.
+class AbilityEquipmentComponent final : public ayt::entity::IComponent {
+public:
+    const char* getName() const override { return "AbilityEquipment"; }
+    AY_PROPERTY(Id, configuration, ayt::entity::kAttrSerialize)
+    AY_PROPERTY(bool, equipped, ayt::entity::kAttrSerialize)
+};
+#undef AY_CURRENT_CLASS
+#define AY_CURRENT_CLASS AbilitySkillComponent
+/// One authored character skill grant. Multiple instances may be placed on an Actor.
+class AbilitySkillComponent final : public ayt::entity::IComponent {
+public:
+    const char* getName() const override { return "AbilitySkill"; }
+    AY_PROPERTY(Id, skillId, ayt::entity::kAttrSerialize)
+    AY_PROPERTY(std::uint32_t, level, ayt::entity::kAttrSerialize)
+};
+#undef AY_CURRENT_CLASS
 struct FireActionResult {
     FireEvent shot;
     std::vector<ayt::combat::ActionResult> hits;
@@ -95,11 +114,12 @@ public:
     /// Delivery adapters use this to discard projectiles after cancellation or source loss.
     bool emitterActive(Identity emitter) const noexcept;
     Result<EquipmentState> equipment(Id instance) const;
-    Result<GrantedSkill> skill(ayt::entity::EntityHandle actor,Id skill) const;
+    Result<GrantedSkill> skill(ayt::entity::EntityHandle actor,Id skill);
 private:
     struct ActorRecord {
         ayt::entity::EntityHandle handle;
         std::uint64_t statsGeneration=0,combatGeneration=0;
+        bool authoredInitialized=false;
     };
     ayt::entity::World* _world=nullptr;
     ayt::combat::CombatSystem* _combat=nullptr;
@@ -134,6 +154,7 @@ private:
     std::map<Id,DerivedCastRecord> _derivedCasts;
     std::vector<EmissionCommand> _emissionQueue;
     Id _nextEmitter=1;
+    Id _nextAuthoredEquipment=Id{1}<<63;
     bool derivedSourceAvailable(const DerivedCastRecord&) const;
     void closeDerived(DerivedCastRecord&);
     Result<void> prepareDelivery(ayt::entity::EntityHandle actor,
@@ -142,13 +163,14 @@ private:
     std::vector<EmissionCommand> advanceDelivery(DerivedCastRecord&,std::uint64_t tick);
     void triggerDependents(DerivedCastRecord&,Id predecessor,StageTrigger trigger,
         std::uint64_t tick,std::optional<std::array<float,3>> origin={});
-    Result<Identity> actorIdentity(ayt::entity::EntityHandle) const;
+    Result<Identity> actorIdentity(ayt::entity::EntityHandle);
+    Result<void> initializeAuthored(ayt::entity::EntityHandle,Identity,ActorRecord&);
     Identity equipmentIdentity(Id instance) const noexcept;
     Result<void> chargeCost(ayt::entity::EntityHandle actor,
         const std::optional<std::pair<std::string,Value>>& cost);
 };
 
-/// Register shared Stats/Combat gameplay components before ComponentRegistry seal.
+/// Register Stats, Combat and repeatable authored Ability components before registry seal.
 Result<void> registerAbilityGameplayComponents(ayt::entity::ComponentRegistry& registry);
 /// Installs/gets the World-owned Stats, Combat and Ability systems in their Sim lanes.
 Result<AbilitySystem*> installAbility(ayt::entity::World& world,std::shared_ptr<const Catalog> catalog);
