@@ -39,6 +39,12 @@ struct FireDeliveryResult {
 /// Composition-time candidate factory. Each cast owns the returned callback until its area ends.
 using AreaProviderFactory=std::function<ayt::combat::Result<ayt::combat::AreaCandidateProvider>(
     ayt::entity::EntityHandle)>;
+/// Composition-time Combat definitions keyed by references in an Ability document.
+using OwnedEffectBindings=std::map<Id,ayt::combat::EffectDefinition>;
+/// Strict preflight: every declared reference has one structurally valid definition,
+/// with no extras. Target-specific Stats modifier compatibility is checked on application.
+Result<void> validateOwnedEffectBindings(const AuthoringDocument& document,
+    const OwnedEffectBindings& effects);
 
 /// World-owned gameplay entry. Equipment state and character skill state are coordinated here;
 /// Stats owns cost values and Combat owns target permission/damage/life publication.
@@ -66,12 +72,16 @@ public:
     /// Register authored area behavior once; castArea then needs only actor and granted skill.
     Result<void> configureAreaSkill(Id skill,ayt::combat::AreaDefinition definition,
         AreaProviderFactory provider);
+    /// Composition preflight; checks that this installed catalog owns an active Area skill.
+    Result<void> validateAreaSkill(Id skill) const;
     Result<AreaCastResult> castArea(ayt::entity::EntityHandle actor,Id skill);
     Result<ayt::combat::AreaSweep> stopArea(std::uint64_t area);
     /// Configure one skill's bounded stages at composition time; casts freeze the current values.
     Result<void> configureDerivedSkill(Id skill,DerivedDefinition definition);
     /// Bind an authored effect reference used by one or more delivery stages.
     Result<void> configureOwnedEffect(Id reference,ayt::combat::EffectDefinition definition);
+    /// Resolve a composition-time Combat effect reference for authored Area bindings.
+    Result<ayt::combat::EffectDefinition> ownedEffect(Id reference) const;
     /// Cast once, charging Stats and opening Combat hit windows before publishing spawn commands.
     Result<DerivedCastResult> castDerived(ayt::entity::EntityHandle actor,Id skill);
     /// Physics/delivery host reports a candidate; Ability handles Combat, Stats and hit dedup.
@@ -142,7 +152,10 @@ private:
 Result<void> registerAbilityGameplayComponents(ayt::entity::ComponentRegistry& registry);
 /// Installs/gets the World-owned Stats, Combat and Ability systems in their Sim lanes.
 Result<AbilitySystem*> installAbility(ayt::entity::World& world,std::shared_ptr<const Catalog> catalog);
-/// Compile a versioned document and install all configured delivery stages together.
+/// Advanced document entry: install stages, then bind Combat effects separately.
 Result<AbilitySystem*> installAbility(ayt::entity::World& world,
     const AuthoringDocument& document);
+/// Strict document installation: validates all Combat effect bindings before changing World.
+Result<AbilitySystem*> installAbility(ayt::entity::World& world,
+    const AuthoringDocument& document,const OwnedEffectBindings& effects);
 } // namespace ayt::ability

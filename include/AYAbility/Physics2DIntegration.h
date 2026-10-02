@@ -5,6 +5,7 @@
 #include <AYPhysics/PhysicsManager.h>
 #include <AYMath/MathTypes.h>
 #include <map>
+#include <string>
 
 namespace ayt::ability {
 /// Owns movement and 2D physics queries; Ability retains costs, targeting and effects.
@@ -38,10 +39,19 @@ private:
 /// Register one World-owned adapter in the Sim lane after AbilitySystem.
 Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
     AbilitySystem& ability,ayt::physics::PhysicsManager& physics);
-/// One-time composition entry: validates and binds every stage profile in the document.
+/// Selection predicates are named by areaSkills2D.selectionKey and sampled each sweep.
+using AreaSelectionBindings2D=std::map<std::string,ayt::combat::AreaSelection2D>;
+/// Simple composition entry: preflight the full document and bindings, then install
+/// Ability, Combat/Stats dependencies and the optional Box2D adapter together.
+Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
+    ayt::physics::PhysicsManager& physics,const AuthoringDocument& document,
+    const OwnedEffectBindings& effects,
+    const AreaSelectionBindings2D& selections={});
+/// Advanced entry for an already installed AbilitySystem with manually bound effects.
 Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
     AbilitySystem& ability,ayt::physics::PhysicsManager& physics,
-    const AuthoringDocument& document);
+    const AuthoringDocument& document,
+    const AreaSelectionBindings2D& selections={});
 /// Configure a source-following Box2D area once; gameplay still calls castArea(actor, skill).
 /// Selection is sampled for each current geometric candidate on every Combat Sim sweep.
 Result<void> configureAreaSkill2D(AbilitySystem& ability,ayt::entity::World& world,

@@ -15,6 +15,40 @@ template<class T> Result<T> invalid(std::string message) {
 ayt::math::FVector3 vector(const std::array<float,3>& value) {
     return {value[0],value[1],value[2]};
 }
+using PreparedArea=std::pair<Id,ayt::combat::AreaDefinition>;
+template<class Resolve>
+Result<std::vector<PreparedArea>> prepareAreas2D(const AuthoringDocument& document,
+    const AreaSelectionBindings2D& selections,Resolve&& resolve) {
+    std::vector<PreparedArea> areas;
+    areas.reserve(document.areaSkills2D.size());
+    for(const auto& binding:document.areaSkills2D) {
+        auto effect=resolve(binding.effect);
+        if(!effect)return std::unexpected(effect.error());
+        ayt::combat::AreaDefinition definition;
+        definition.effect=std::move(*effect);
+        definition.permission.intent=static_cast<ayt::combat::InteractionIntent>(binding.intent);
+        definition.permission.allowed=binding.allowed;
+        definition.permission.requiredTag=binding.requiredTag;
+        definition.permission.requireSelected=binding.requireSelected;
+        definition.maxCandidates=binding.maxCandidates;
+        definition.maxMembers=binding.maxMembers;
+        definition.requireTargetAlive=binding.requireTargetAlive;
+        if(binding.requireSelected) {
+            const auto found=selections.find(binding.selectionKey);
+            if(found==selections.end() || !found->second)
+                return invalid<std::vector<PreparedArea>>("2D area selection binding missing");
+        }
+        if(binding.requiredTag &&
+           std::ranges::find(definition.effect.tags,binding.requiredTag)!=
+               definition.effect.tags.end())
+            return invalid<std::vector<PreparedArea>>("area effect grants its own required tag");
+        if(std::ranges::find(definition.effect.immuneEffects,definition.effect.type)!=
+           definition.effect.immuneEffects.end())
+            return invalid<std::vector<PreparedArea>>("area effect grants immunity to itself");
+        areas.emplace_back(binding.skill,std::move(definition));
+    }
+    return areas;
+}
 }
 Result<void> Ability2DDeliverySystem::configure(Id action,Id stage,Delivery2DProfile profile) {
     if(!action || !stage)return invalid<void>("2D stage identity missing");
@@ -197,15 +231,60 @@ Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
 }
 Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
     AbilitySystem& ability,ayt::physics::PhysicsManager& physics,
-    const AuthoringDocument& document) {
+    const AuthoringDocument& document,const AreaSelectionBindings2D& selections) {
     Ability2DDeliverySystem checked;
     if(auto valid=checked.configure(document);!valid)
         return std::unexpected(valid.error());
+    for(const auto& binding:document.areaSkills2D)
+        if(auto valid=ability.validateAreaSkill(binding.skill);!valid)
+            return std::unexpected(valid.error());
+    auto areas=prepareAreas2D(document,selections,
+        [&](Id reference){return ability.ownedEffect(reference);});
+    if(!areas)return std::unexpected(areas.error());
     auto installed=installAbility2D(world,ability,physics);
     if(!installed)return installed;
     if(auto configured=(*installed)->configure(document);!configured)
         return std::unexpected(configured.error());
+    for(std::size_t i=0;i<areas->size();++i) {
+        const auto& binding=document.areaSkills2D[i];
+        ayt::combat::AreaQuery2D query;
+        query.radius=binding.radius;
+        query.offset=binding.offset;
+        query.layerMask=binding.layerMask;
+        query.includeSource=binding.includeSource;
+        ayt::combat::AreaSelection2D selection;
+        if(binding.requireSelected)selection=selections.at(binding.selectionKey);
+        auto configuredArea=configureAreaSkill2D(ability,world,physics,binding.skill,
+            std::move((*areas)[i].second),query,std::move(selection));
+        if(!configuredArea)return std::unexpected(configuredArea.error());
+    }
     return installed;
+}
+Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
+    ayt::physics::PhysicsManager& physics,const AuthoringDocument& document,
+    const OwnedEffectBindings& effects,const AreaSelectionBindings2D& selections) {
+    if(auto valid=validateOwnedEffectBindings(document,effects);!valid)
+        return std::unexpected(valid.error());
+    Ability2DDeliverySystem checked;
+    if(auto valid=checked.configure(document);!valid)
+        return std::unexpected(valid.error());
+    if(!physics.world2D())
+        return invalid<Ability2DDeliverySystem*>("2D physics world unavailable");
+    if(auto* existing=world.findSystemByName("Ability2DDeliverySystem");existing &&
+       !dynamic_cast<Ability2DDeliverySystem*>(existing))
+        return invalid<Ability2DDeliverySystem*>("2D delivery system name collision");
+    auto areas=prepareAreas2D(document,selections,[&](Id reference)
+        ->Result<ayt::combat::EffectDefinition> {
+        const auto found=effects.find(reference);
+        if(found==effects.end())
+            return std::unexpected(Diagnostic{Error::Missing,
+                "Combat effect binding missing",{}});
+        return found->second;
+    });
+    if(!areas)return std::unexpected(areas.error());
+    auto ability=installAbility(world,document,effects);
+    if(!ability)return std::unexpected(ability.error());
+    return installAbility2D(world,**ability,physics,document,selections);
 }
 Result<void> configureAreaSkill2D(AbilitySystem& ability,ayt::entity::World& world,
     ayt::physics::PhysicsManager& physics,Id skill,

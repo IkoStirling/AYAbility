@@ -178,12 +178,17 @@ Result<FireActionResult> AbilitySystem::fireAt(ayt::entity::EntityHandle actor,
 }
 Result<void> AbilitySystem::configureAreaSkill(Id skill,ayt::combat::AreaDefinition definition,
         AreaProviderFactory provider) {
-    if(!_catalog || !_runtime || !provider)return fail<void>(Error::Invalid,"area skill owner or provider missing");
+    if(!provider)return fail<void>(Error::Invalid,"area provider missing");
+    if(auto valid=validateAreaSkill(skill);!valid)return valid;
+    _areaSkills.insert_or_assign(skill,AreaSkill{std::move(definition),std::move(provider)});
+    return {};
+}
+Result<void> AbilitySystem::validateAreaSkill(Id skill) const {
+    if(!_catalog || !_runtime)return fail<void>(Error::Stale,"area skill catalog missing");
     const auto* authored=_catalog->findSkill(skill);
     const auto* action=authored?_catalog->findAction(authored->action):nullptr;
     if(!authored || authored->kind!=SkillKind::Active || !action || action->behaviorId!=area::Behavior)
         return fail<void>(Error::Invalid,"skill is not an active area behavior");
-    _areaSkills.insert_or_assign(skill,AreaSkill{std::move(definition),std::move(provider)});
     return {};
 }
 Result<AreaCastResult> AbilitySystem::castArea(ayt::entity::EntityHandle actor,Id skill) {

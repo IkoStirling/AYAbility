@@ -60,4 +60,32 @@ TEST_CASE(versioned_document_roundtrips_and_validates_references) {
     CHECK_TRUE(compileAuthoring(*loaded).has_value());
     CHECK_FALSE(loadAuthoring(R"({"version":1,"actions":[{"id":"wrong"}]})").has_value());
 }
+TEST_CASE(area_skill_2d_roundtrips_and_rejects_invalid_bindings) {
+    AuthoringDocument authored;
+    authored.actions={{.id=20,.behaviorId=area::Behavior,
+        .defaults={{area::CooldownTicks,Unit::Ticks,6}}}};
+    authored.skills={{.id=303,.action=20,.kind=SkillKind::Active}};
+    authored.effectReferences={901};
+    authored.areaSkills2D={{.skill=303,.effect=901,.radius=2.5f,
+        .offset={0.5f,0.0f},.intent=0,.allowed=2,
+        .requireSelected=true,.selectionKey="party-selected"}};
+    auto saved=saveAuthoring(authored);
+    CHECK_TRUE(saved.has_value());
+    auto loaded=loadAuthoring(*saved);
+    CHECK_TRUE(loaded.has_value());
+    CHECK_TRUE(loaded->areaSkills2D.size()==1);
+    CHECK_TRUE(loaded->areaSkills2D[0].selectionKey=="party-selected");
+    CHECK_TRUE(saveAuthoring(*loaded).value()==*saved);
+    auto invalid=authored;
+    invalid.areaSkills2D[0].effect=902;
+    CHECK_FALSE(compileAuthoring(invalid).has_value());
+    invalid=authored;invalid.areaSkills2D[0].skill=0;
+    CHECK_FALSE(compileAuthoring(invalid).has_value());
+    invalid=authored;invalid.areaSkills2D[0].selectionKey.clear();
+    CHECK_FALSE(compileAuthoring(invalid).has_value());
+    invalid=authored;invalid.areaSkills2D[0].radius=0;
+    CHECK_FALSE(compileAuthoring(invalid).has_value());
+    invalid=authored;invalid.areaSkills2D.push_back(authored.areaSkills2D[0]);
+    CHECK_FALSE(compileAuthoring(invalid).has_value());
+}
 TEST_SUITE_END

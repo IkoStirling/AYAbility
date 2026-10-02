@@ -22,8 +22,11 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DeliveryBinding,owner,definition
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery2DProfile,velocity,spawnOffset,
     radius,layerMask,reverseAfterTicks,ignoreSource,obstacle,target)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery2DBinding,action,stage,profile)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AreaSkill2DBinding,skill,effect,radius,
+    offset,layerMask,includeSource,intent,allowed,requiredTag,requireSelected,
+    selectionKey,maxCandidates,maxMembers,requireTargetAlive)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AuthoringDocument,version,actions,equipment,
-    skills,fireDeliveries,derivedSkills,delivery2D,effectReferences)
+    skills,fireDeliveries,derivedSkills,delivery2D,areaSkills2D,effectReferences)
 
 namespace {
 template<class T> Result<T> invalid(std::string message) {
@@ -96,6 +99,26 @@ Result<std::shared_ptr<const Catalog>> compileAuthoring(const AuthoringDocument&
             return invalid<std::shared_ptr<const Catalog>>("2D profile references unknown or duplicate stage");
         if(auto valid=validateDelivery2DProfile(binding.profile);!valid)
             return std::unexpected(valid.error());
+    }
+    std::set<Id> areaSkills;
+    for(const auto& binding:document.areaSkills2D) {
+        if(!binding.skill || !areaSkills.insert(binding.skill).second ||
+           !effects.contains(binding.effect))
+            return invalid<std::shared_ptr<const Catalog>>(
+                "duplicate area skill or unresolved Combat effect reference");
+        const auto* skill=(*catalog)->findSkill(binding.skill);
+        const auto* action=skill?(*catalog)->findAction(skill->action):nullptr;
+        if(!skill || skill->kind!=SkillKind::Active || !action ||
+           action->behaviorId!=area::Behavior)
+            return invalid<std::shared_ptr<const Catalog>>("2D area owner mismatch");
+        if(!std::isfinite(binding.radius) || binding.radius<=0 ||
+           !std::isfinite(binding.offset[0]) || !std::isfinite(binding.offset[1]) ||
+           !binding.layerMask || binding.intent>2 || !binding.allowed ||
+           (binding.allowed&~std::uint32_t{63}) ||
+           !binding.maxCandidates || binding.maxCandidates>65536 ||
+           !binding.maxMembers || binding.maxMembers>65536 ||
+           binding.requireSelected==binding.selectionKey.empty())
+            return invalid<std::shared_ptr<const Catalog>>("invalid 2D area profile");
     }
     return catalog;
 }

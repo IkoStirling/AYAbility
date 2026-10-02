@@ -20,6 +20,23 @@ struct Delivery2DBinding {
     Delivery2DProfile profile;
 };
 Result<void> validateDelivery2DProfile(const Delivery2DProfile& profile);
+/// Physics-independent source-following circle and Combat permission for an Area skill.
+struct AreaSkill2DBinding {
+    Id skill=0,effect=0;
+    float radius=0.0f;
+    std::array<float,2> offset{};
+    std::uint32_t layerMask=0xffffffffu;
+    bool includeSource=false;
+    /// Combat InteractionIntent: Beneficial 0, Harmful 1, Neutral 2.
+    std::uint32_t intent=2;
+    std::uint32_t allowed=0;
+    Id requiredTag=0;
+    bool requireSelected=false;
+    /// Host-provided predicate name; required exactly when requireSelected is true.
+    std::string selectionKey;
+    std::uint32_t maxCandidates=1024,maxMembers=1024;
+    bool requireTargetAlive=true;
+};
 struct DeliveryBinding {
     Id owner=0; // equipment configuration for fire, skill id for derived
     DerivedDefinition definition;
@@ -33,6 +50,8 @@ struct AuthoringDocument {
     std::vector<DeliveryBinding> fireDeliveries;
     std::vector<DeliveryBinding> derivedSkills;
     std::vector<Delivery2DBinding> delivery2D;
+    /// Bind source-following 2D Area skills during installAbility2D.
+    std::vector<AreaSkill2DBinding> areaSkills2D;
     /// Combat-owned definitions are supplied at composition time under these references.
     std::vector<Id> effectReferences;
 };

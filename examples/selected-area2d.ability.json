@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "actions": [
+    {"id": 20, "behaviorId": 2,
+     "defaults": [{"id": 1, "unit": 1, "value": 6}]}
+  ],
+  "skills": [
+    {"id": 303, "action": 20, "kind": 1, "maxLevel": 1,
+     "cost": {"resource": "mana", "amount": {"mode": 0, "constant": 10}}}
+  ],
+  "effectReferences": [901],
+  "areaSkills2D": [
+    {"skill": 303, "effect": 901, "radius": 1.0,
+     "offset": [0, 0], "layerMask": 4294967295,
+     "intent": 0, "allowed": 2,
+     "requireSelected": true, "selectionKey": "selected-friends",
+     "maxCandidates": 2}
+  ]
+}

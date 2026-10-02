@@ -40,7 +40,8 @@ Result<void> AbilitySystem::configureFireDelivery(Id configuration,DerivedDefini
     _fireDeliveries.insert_or_assign(configuration,std::move(definition));
     return {};
 }
-Result<void> AbilitySystem::configureOwnedEffect(Id reference,ayt::combat::EffectDefinition definition) {
+namespace {
+Result<void> validateOwnedEffect(Id reference,const ayt::combat::EffectDefinition& definition) {
     if(!reference || !definition.type || !definition.key || !definition.maxStacks ||
        !definition.durationTicks ||
        (definition.modifiers.empty() && definition.tags.empty() &&
@@ -52,8 +53,34 @@ Result<void> AbilitySystem::configureOwnedEffect(Id reference,ayt::combat::Effec
        std::any_of(definition.immuneDamageTypes.begin(),definition.immuneDamageTypes.end(),
            [](Id id){return !id;}))
         return fail<void>(Error::Invalid,"invalid Combat effect reference");
+    return {};
+}
+}
+Result<void> validateOwnedEffectBindings(const AuthoringDocument& document,
+    const OwnedEffectBindings& effects) {
+    if(auto valid=compileAuthoring(document);!valid)
+        return std::unexpected(valid.error());
+    if(effects.size()!=document.effectReferences.size())
+        return fail<void>(Error::Invalid,"Combat effect binding count mismatch");
+    for(const auto reference:document.effectReferences) {
+        const auto found=effects.find(reference);
+        if(found==effects.end())
+            return fail<void>(Error::Missing,"Combat effect binding missing");
+        if(auto valid=validateOwnedEffect(reference,found->second);!valid)return valid;
+    }
+    return {};
+}
+Result<void> AbilitySystem::configureOwnedEffect(Id reference,ayt::combat::EffectDefinition definition) {
+    if(auto valid=validateOwnedEffect(reference,definition);!valid)return valid;
     _ownedEffects.insert_or_assign(reference,std::move(definition));
     return {};
+}
+Result<ayt::combat::EffectDefinition> AbilitySystem::ownedEffect(Id reference) const {
+    const auto found=_ownedEffects.find(reference);
+    if(found==_ownedEffects.end())
+        return fail<ayt::combat::EffectDefinition>(Error::Missing,
+            "Combat effect reference is not configured");
+    return found->second;
 }
 Result<void> AbilitySystem::prepareDelivery(ayt::entity::EntityHandle actor,
         const ayt::combat::EntityBinding& binding,DerivedRelease& release,
@@ -231,6 +258,18 @@ Result<AbilitySystem*> installAbility(ayt::entity::World& world,
     for(const auto& binding:document.derivedSkills) {
         auto result=(*installed)->configureDerivedSkill(binding.owner,binding.definition);
         if(!result)return std::unexpected(result.error());
+    }
+    return installed;
+}
+Result<AbilitySystem*> installAbility(ayt::entity::World& world,
+    const AuthoringDocument& document,const OwnedEffectBindings& effects) {
+    if(auto valid=validateOwnedEffectBindings(document,effects);!valid)
+        return std::unexpected(valid.error());
+    auto installed=installAbility(world,document);
+    if(!installed)return installed;
+    for(const auto& [reference,definition]:effects) {
+        auto bound=(*installed)->configureOwnedEffect(reference,definition);
+        if(!bound)return std::unexpected(bound.error());
     }
     return installed;
 }

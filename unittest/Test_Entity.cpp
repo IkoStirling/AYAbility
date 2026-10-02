@@ -1,5 +1,6 @@
 #include <AYTest.h>
 #include <AYAbility/EntityIntegration.h>
+#include <AYAbility/Authoring.h>
 #include <AYEntity.h>
 #include <AYEntity/EntityModule.h>
 #include "Fixtures.h"
@@ -48,6 +49,54 @@ struct WorldFixture {
 };
 }
 TEST_SUITE(AbilityEntityTests)
+TEST_CASE(strict_document_rejects_missing_effects_before_world_installation) {
+    auto& world=ayt::entity::World::processWorld();
+    ayt::entity::World::setActiveWorld(nullptr);
+    world.initialize();
+    auto& registry=ayt::entity::ComponentRegistry::instance();
+    if(!registry.isSealed()) {
+        (void)ayt::entity::registerEntityCoreComponents(registry);
+        CHECK_TRUE(ayt::ability::registerAbilityGameplayComponents(registry).has_value());
+        registry.seal();
+    }
+    ayt::ability::AuthoringDocument document;
+    document.actions={{.id=30,.behaviorId=ayt::ability::derived::Behavior,
+        .defaults={{ayt::ability::derived::CooldownTicks,ayt::ability::Unit::Ticks,1}}}};
+    document.skills={{.id=404,.action=30,.kind=ayt::ability::SkillKind::Active}};
+    document.effectReferences={700};
+    document.derivedSkills={{404,{.stages={{.id=1,.lifetimeTicks=3,
+        .operation=ayt::ability::StageOperation::OwnedEffect,.effect=700}}}}};
+    CHECK_FALSE(ayt::ability::installAbility(world,document,
+        ayt::ability::OwnedEffectBindings{}).has_value());
+    CHECK_FALSE(world.findSystemByName("AbilitySystem"));
+    ayt::combat::EffectDefinition effect;
+    effect.type=700;effect.key=700;effect.tags={99};
+    ayt::ability::OwnedEffectBindings effects{{700,effect}};
+    auto invalid=effects;invalid.at(700).type=0;
+    CHECK_FALSE(ayt::ability::installAbility(world,document,invalid).has_value());
+    CHECK_FALSE(world.findSystemByName("AbilitySystem"));
+    invalid=effects;invalid.emplace(701,effect);
+    CHECK_FALSE(ayt::ability::installAbility(world,document,invalid).has_value());
+    CHECK_FALSE(world.findSystemByName("AbilitySystem"));
+    auto* ability=ayt::ability::installAbility(world,document,effects).value();
+    auto* combat=dynamic_cast<ayt::combat::CombatSystem*>(world.findSystemByName("CombatSystem"));
+    auto* sourceEntity=world.createEntity();
+    auto* targetEntity=world.createEntity();
+    const auto source=world.getEntityHandle(sourceEntity->getId());
+    const auto target=world.getEntityHandle(targetEntity->getId());
+    auto schema=ayt::stats::Schema::compile({
+        {.name="health",.shape=ayt::stats::Shape::Pool,.current=100,.capacity=100}}).value();
+    ayt::combat::ActorProfile profile{schema,{ayt::stats::statId("health")},1};
+    CHECK_TRUE(combat->configureActor(source,profile).has_value());
+    profile.team=2;
+    CHECK_TRUE(combat->configureActor(target,profile).has_value());
+    CHECK_TRUE(combat->setRelation(1,2,ayt::combat::Relation::Hostile).has_value());
+    CHECK_TRUE(ability->grant(source,404,1).has_value());
+    auto cast=ability->castDerived(source,404).value();
+    CHECK_TRUE(ability->reportDerivedHit(cast.emissions.front().emitter,target).has_value());
+    CHECK_TRUE(combat->hasTag(target,99).value());
+    world.shutdown();
+}
 TEST_CASE(simple_entry_coordinates_equipment_skill_cost_and_combat) {
     WorldFixture f;
     CHECK_TRUE(f.ability->addEquipment(f.source,1001,101).has_value());

@@ -247,8 +247,11 @@ TEST_CASE(physics_area_tracks_selected_friends_without_manual_candidate_sync) {
     backend.kind3D=ayt::physics::BackendKind::Null;
     backend.kind2D=ayt::physics::BackendKind::DefaultBox2D;
     auto manager=ayt::physics::PhysicsManager::create(backend);
-    auto* ability=installAbility(world,fixture::catalog()).value();
-    auto* combat=dynamic_cast<ayt::combat::CombatSystem*>(world.findSystemByName("CombatSystem"));
+    std::ifstream input(std::string(AY_ABILITY_EXAMPLE_DIR)+
+        "/selected-area2d.ability.json");
+    CHECK_TRUE(input.good());
+    const std::string authored(std::istreambuf_iterator<char>{input},{});
+    auto document=loadAuthoring(authored).value();
     auto* sourceEntity=world.createEntity();
     auto* targetEntity=world.createEntity();
     auto* otherEntity=world.createEntity();
@@ -257,6 +260,28 @@ TEST_CASE(physics_area_tracks_selected_friends_without_manual_candidate_sync) {
     auto other=world.getEntityHandle(otherEntity->getId());
     auto* sourceTransform=sourceEntity->addComponent<ayt::entity::Transform>();
     sourceTransform->setPosition(0.0f,0.0f,0.0f);
+    bool selected=true,selectOther=false;
+    AreaSelectionBindings2D selections{{"selected-friends",
+        [&](ayt::entity::EntityHandle candidate){
+            return (candidate==target && selected) || (candidate==other && selectOther);
+        }}};
+    ayt::combat::EffectDefinition effect;
+    effect.type=901;effect.key=901;effect.tags={77};
+    OwnedEffectBindings effects{{901,effect}};
+    CHECK_FALSE(installAbility2D(world,*manager,document,{},selections).has_value());
+    CHECK_FALSE(world.findSystemByName("AbilitySystem"));
+    auto invalid=document;invalid.areaSkills2D[0].radius=-1;
+    CHECK_FALSE(installAbility2D(world,*manager,invalid,effects,selections).has_value());
+    CHECK_FALSE(world.findSystemByName("AbilitySystem"));
+    invalid=document;invalid.areaSkills2D[0].requiredTag=77;
+    CHECK_FALSE(installAbility2D(world,*manager,invalid,effects,selections).has_value());
+    CHECK_FALSE(world.findSystemByName("AbilitySystem"));
+    CHECK_FALSE(installAbility2D(world,*manager,document,effects).has_value());
+    CHECK_FALSE(world.findSystemByName("AbilitySystem"));
+    CHECK_TRUE(installAbility2D(world,*manager,document,effects,selections).has_value());
+    auto* ability=dynamic_cast<AbilitySystem*>(world.findSystemByName("AbilitySystem"));
+    auto* combat=dynamic_cast<ayt::combat::CombatSystem*>(world.findSystemByName("CombatSystem"));
+    CHECK_TRUE(ability && combat);
     auto schema=ayt::stats::Schema::compile({
         {.name="health",.shape=ayt::stats::Shape::Pool,.current=100,.capacity=100},
         {.name="mana",.shape=ayt::stats::Shape::Pool,.current=80,.capacity=80}}).value();
@@ -267,21 +292,6 @@ TEST_CASE(physics_area_tracks_selected_friends_without_manual_candidate_sync) {
     CHECK_TRUE(combat->configureActor(other,profile).has_value());
     CHECK_TRUE(combat->setRelation(1,2,ayt::combat::Relation::Friendly).has_value());
     CHECK_TRUE(ability->grant(source,303,1).has_value());
-    ayt::combat::AreaDefinition area;
-    area.effect.type=901;area.effect.key=901;area.effect.tags={77};
-    area.maxCandidates=2;
-    area.permission={ayt::combat::InteractionIntent::Beneficial,
-        ayt::combat::mask(ayt::combat::AllowedTarget::Friendly)};
-    area.permission.requireSelected=true;
-    ayt::combat::AreaQuery2D query;query.radius=1.0f;
-    auto invalid=query;invalid.radius=-1;
-    CHECK_FALSE(configureAreaSkill2D(*ability,world,*manager,303,area,invalid).has_value());
-    CHECK_FALSE(configureAreaSkill2D(*ability,world,*manager,303,area,query).has_value());
-    bool selected=true,selectOther=false;
-    CHECK_TRUE(configureAreaSkill2D(*ability,world,*manager,303,area,query,
-        [&](ayt::entity::EntityHandle candidate){
-            return (candidate==target && selected) || (candidate==other && selectOther);
-        }).has_value());
     auto addBody=[&](ayt::entity::Entity* entity,float x) {
         ayt::physics::RigidbodyDesc body{};body.type=ayt::physics::BodyType::Static;
         body.position={x,0,0};
