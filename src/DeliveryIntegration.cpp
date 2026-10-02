@@ -244,7 +244,11 @@ Result<FireDeliveryResult> AbilitySystem::fireDelivered(ayt::entity::EntityHandl
     if(!fired)return std::unexpected(fired.error());
     _nextEmitter+=release.emissions.size();
     auto& record=_derivedCasts.at(fired->execution);
-    return FireDeliveryResult{std::move(*fired),advanceDelivery(record,_combat->attributes().tick())};
+    FireDeliveryResult result{std::move(*fired),
+        advanceDelivery(record,_combat->attributes().tick())};
+    result.combos=recordCombo(*key,result.shot.activeSkill?result.shot.activeSkill:
+        result.shot.resolved.action,result.shot.tick);
+    return result;
 }
 Result<AbilitySystem*> installAbility(ayt::entity::World& world,
     const AuthoringDocument& document) {

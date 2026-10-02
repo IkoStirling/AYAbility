@@ -22,11 +22,20 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DeliveryBinding,owner,definition
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery2DProfile,velocity,spawnOffset,
     radius,layerMask,reverseAfterTicks,ignoreSource,obstacle,target)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery2DBinding,action,stage,profile)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery3DProfile,velocity,spawnOffset,
+    radius,layerMask,reverseAfterTicks,ignoreSource,obstacle,target)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery3DBinding,action,stage,profile)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AreaSkill2DBinding,skill,effect,radius,
     offset,layerMask,includeSource,intent,allowed,requiredTag,requireSelected,
     selectionKey,maxCandidates,maxMembers,requireTargetAlive)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AuthoringDocument,version,actions,equipment,
-    skills,fireDeliveries,derivedSkills,delivery2D,areaSkills2D,effectReferences)
+    skills,fireDeliveries,derivedSkills,delivery2D,delivery3D,areaSkills2D,effectReferences)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Identity,domain,object,generation)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(GrantedSkill,skill,level,nextReadyTick)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(EquipmentState,owner,identity,configuration,
+    ammunition,streak,nextFireTick,lastFireTick,reloadUntil,reloading)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeCheckpoint::Actor,identity,equipped,skills)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeCheckpoint,version,nextExecution,actors,equipment)
 
 namespace {
 template<class T> Result<T> invalid(std::string message) {
@@ -50,6 +59,15 @@ Result<void> validateDelivery2DProfile(const Delivery2DProfile& profile) {
        profile.obstacle>CollisionResponse2D::PassThrough ||
        profile.target>CollisionResponse2D::PassThrough)
         return invalid<void>("invalid 2D delivery profile");
+    return {};
+}
+Result<void> validateDelivery3DProfile(const Delivery3DProfile& profile) {
+    for(float value:profile.velocity)if(!std::isfinite(value))return invalid<void>("non-finite 3D velocity");
+    for(float value:profile.spawnOffset)if(!std::isfinite(value))return invalid<void>("non-finite 3D offset");
+    if(!std::isfinite(profile.radius) || profile.radius<0 || !profile.layerMask ||
+       profile.obstacle>CollisionResponse3D::PassThrough ||
+       profile.target>CollisionResponse3D::PassThrough)
+        return invalid<void>("invalid 3D delivery profile");
     return {};
 }
 Result<std::shared_ptr<const Catalog>> compileAuthoring(const AuthoringDocument& document) {
@@ -100,6 +118,14 @@ Result<std::shared_ptr<const Catalog>> compileAuthoring(const AuthoringDocument&
         if(auto valid=validateDelivery2DProfile(binding.profile);!valid)
             return std::unexpected(valid.error());
     }
+    profiles.clear();
+    for(const auto& binding:document.delivery3D) {
+        const auto key=std::pair{binding.action,binding.stage};
+        if(!stageKeys.contains(key) || !profiles.insert(key).second)
+            return invalid<std::shared_ptr<const Catalog>>("3D profile references unknown or duplicate stage");
+        if(auto valid=validateDelivery3DProfile(binding.profile);!valid)
+            return std::unexpected(valid.error());
+    }
     std::set<Id> areaSkills;
     for(const auto& binding:document.areaSkills2D) {
         if(!binding.skill || !areaSkills.insert(binding.skill).second ||
@@ -138,5 +164,22 @@ Result<std::string> saveAuthoring(const AuthoringDocument& document) {
     if(auto valid=compileAuthoring(document);!valid)return std::unexpected(valid.error());
     try{return json(document).dump(2);}
     catch(const std::exception& error){return invalid<std::string>(error.what());}
+}
+Result<std::string> encodeRuntimeCheckpoint(const RuntimeCheckpoint& checkpoint) {
+    if(checkpoint.version!=1 || !checkpoint.nextExecution)
+        return invalid<std::string>("invalid Ability checkpoint header");
+    try{return json(checkpoint).dump();}
+    catch(const std::exception& error){return invalid<std::string>(error.what());}
+}
+Result<RuntimeCheckpoint> decodeRuntimeCheckpoint(std::string_view source) {
+    try {
+        auto value=json::parse(source.begin(),source.end());
+        auto checkpoint=value.get<RuntimeCheckpoint>();
+        if(checkpoint.version!=1 || !checkpoint.nextExecution)
+            return invalid<RuntimeCheckpoint>("unsupported Ability checkpoint header");
+        return checkpoint;
+    } catch(const std::exception& error) {
+        return invalid<RuntimeCheckpoint>(error.what());
+    }
 }
 } // namespace ayt::ability

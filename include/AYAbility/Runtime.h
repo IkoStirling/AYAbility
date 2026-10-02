@@ -43,6 +43,18 @@ struct ActivationEvent {
     ResolvedAction resolved;
 };
 
+/// Owned runtime state for a coordinated gameplay checkpoint. No pointers or callbacks.
+struct RuntimeCheckpoint {
+    struct Actor {
+        Identity identity,equipped;
+        std::vector<GrantedSkill> skills;
+    };
+    std::uint32_t version=1;
+    std::uint64_t nextExecution=1;
+    std::vector<Actor> actors;
+    std::vector<EquipmentState> equipment;
+};
+
 /// Single-owner headless runtime. The caller supplies the fixed Sim tick.
 /// A pre-commit hook can atomically charge an external resource before local state changes.
 class Runtime {
@@ -62,6 +74,10 @@ public:
     Result<GrantedSkill> skill(Identity actor, Id skill) const;
     Result<std::optional<Identity>> equipped(Identity actor) const;
     Result<void> removeActor(Identity actor);
+    /// Capture ammo, cadence, reload and skill cooldowns; immutable catalog is supplied separately.
+    Result<RuntimeCheckpoint> checkpoint() const;
+    /// Validate the complete snapshot against this catalog before replacing live state.
+    Result<void> restoreCheckpoint(const RuntimeCheckpoint& checkpoint);
 private:
     struct ActorState {
         Identity equipped;

@@ -226,4 +226,69 @@ Result<void> Runtime::removeActor(Identity actor) {
         if(at->second.owner==actor)at=_equipment.erase(at);else ++at;
     return {};
 }
+Result<RuntimeCheckpoint> Runtime::checkpoint() const {
+    if(_committing)return fail<RuntimeCheckpoint>(Error::Busy,"runtime commit in progress");
+    RuntimeCheckpoint snapshot;
+    snapshot.nextExecution=_nextExecution;
+    snapshot.actors.reserve(_actors.size());
+    snapshot.equipment.reserve(_equipment.size());
+    for(const auto& [id,state]:_actors) {
+        RuntimeCheckpoint::Actor actor{.identity=id,.equipped=state.equipped};
+        actor.skills.reserve(state.skills.size());
+        for(const auto& [skill,grant]:state.skills)actor.skills.push_back(grant);
+        snapshot.actors.push_back(std::move(actor));
+    }
+    for(const auto& [id,state]:_equipment)snapshot.equipment.push_back(state);
+    return snapshot;
+}
+Result<void> Runtime::restoreCheckpoint(const RuntimeCheckpoint& snapshot) {
+    if(_committing)return fail<void>(Error::Busy,"runtime commit in progress");
+    if(!_catalog || snapshot.version!=1 || !snapshot.nextExecution)
+        return fail<void>(Error::Invalid,"invalid runtime checkpoint header");
+    Runtime restored(_catalog);
+    restored._nextExecution=snapshot.nextExecution;
+    for(const auto& source:snapshot.actors) {
+        if(!source.identity.valid() ||
+           (source.equipped.valid() && source.equipped.domain!=source.identity.domain))
+            return fail<void>(Error::Invalid,"invalid checkpoint actor identity");
+        ActorState state{.equipped=source.equipped};
+        for(const auto& grant:source.skills) {
+            const auto* definition=_catalog->findSkill(grant.skill);
+            if(!definition || !grant.level || grant.level>definition->maxLevel ||
+               !state.skills.emplace(grant.skill,grant).second)
+                return fail<void>(Error::Invalid,"invalid checkpoint skill grant");
+        }
+        if(!restored._actors.emplace(source.identity,std::move(state)).second)
+            return fail<void>(Error::Duplicate,"duplicate checkpoint actor");
+    }
+    for(const auto& source:snapshot.equipment) {
+        if(!source.identity.valid() || !source.owner.valid() ||
+           source.identity.domain!=source.owner.domain ||
+           !restored._actors.contains(source.owner))
+            return fail<void>(Error::Invalid,"invalid checkpoint equipment owner");
+        const auto* config=_catalog->findEquipment(source.configuration);
+        if(!config)return fail<void>(Error::Missing,"checkpoint equipment configuration missing");
+        std::vector<SkillLevel> levels;
+        for(const auto& [id,grant]:restored._actors.at(source.owner).skills)
+            levels.push_back({id,grant.level});
+        auto resolved=_catalog->resolve(config->action,source.configuration,levels);
+        if(!resolved)return std::unexpected(resolved.error());
+        if(auto valid=validateFire(*resolved);!valid)return valid;
+        const auto capacity=resolved->value(fire::MagazineCapacity,Unit::Count);
+        if(!capacity || source.ammunition<0 || source.ammunition>*capacity ||
+           (source.reloading && !source.reloadUntil))
+            return fail<void>(Error::Invalid,"invalid checkpoint ammunition or reload");
+        if(!restored._equipment.emplace(source.identity,source).second)
+            return fail<void>(Error::Duplicate,"duplicate checkpoint equipment");
+    }
+    for(const auto& [id,actor]:restored._actors)if(actor.equipped.valid()) {
+        const auto item=restored._equipment.find(actor.equipped);
+        if(item==restored._equipment.end() || item->second.owner!=id)
+            return fail<void>(Error::Invalid,"checkpoint equipped slot does not belong to actor");
+    }
+    _actors.swap(restored._actors);
+    _equipment.swap(restored._equipment);
+    _nextExecution=restored._nextExecution;
+    return {};
+}
 } // namespace ayt::ability

@@ -148,6 +148,15 @@ Result<void> AbilitySystem::setLevel(ayt::entity::EntityHandle actor,Id skillId,
     auto key=actorIdentity(actor);if(!key)return std::unexpected(key.error());
     return _runtime->setLevel(*key,skillId,level);
 }
+Result<void> AbilitySystem::configureCombos(std::vector<ComboDefinition> definitions) {
+    auto compiled=ComboTracker::compile(std::move(definitions));
+    if(!compiled)return std::unexpected(compiled.error());
+    _combos=std::move(*compiled);
+    return {};
+}
+std::vector<ComboEvent> AbilitySystem::recordCombo(Identity actor,Id token,std::uint64_t tick) {
+    return _combos?_combos->accept(actor,token,tick):std::vector<ComboEvent>{};
+}
 Result<void> AbilitySystem::beginReload(ayt::entity::EntityHandle actor) {
     auto key=actorIdentity(actor);if(!key)return std::unexpected(key.error());
     return _runtime->beginReload(*key,_combat->attributes().tick());
@@ -183,6 +192,8 @@ Result<FireActionResult> AbilitySystem::fireAt(ayt::entity::EntityHandle actor,
     });
     if(!fired)return std::unexpected(fired.error());
     FireActionResult result{.shot=std::move(*fired)};
+    result.combos=recordCombo(*key,result.shot.activeSkill?result.shot.activeSkill:
+        result.shot.resolved.action,result.shot.tick);
     if(!target)return result;
     auto binding=ayt::combat::bindCombatant(*_world,*target);
     if(!binding){result.combatError=binding.error();return result;}
@@ -268,7 +279,9 @@ Result<AreaCastResult> AbilitySystem::castArea(ayt::entity::EntityHandle actor,I
         if(!rollback || !rollback->ended)return fail<AreaCastResult>(Error::Invalid,"area activation rollback failed");
         return std::unexpected(activated.error());
     }
-    return AreaCastResult{std::move(*activated),*started};
+    AreaCastResult result{std::move(*activated),*started};
+    result.combos=recordCombo(*key,skill,result.cast.tick);
+    return result;
 }
 Result<ayt::combat::AreaSweep> AbilitySystem::stopArea(std::uint64_t area) {
     if(!_combat)return fail<ayt::combat::AreaSweep>(Error::Stale,"Combat World unavailable");
@@ -344,8 +357,10 @@ Result<DerivedCastResult> AbilitySystem::castDerived(ayt::entity::EntityHandle a
     if(!activated)return std::unexpected(activated.error());
     _nextEmitter+=release.emissions.size();
     auto& record=_derivedCasts.at(activated->execution);
-    return DerivedCastResult{std::move(*activated),
+    DerivedCastResult result{std::move(*activated),
         advanceDelivery(record,_combat->attributes().tick())};
+    result.combos=recordCombo(*key,skillId,result.cast.tick);
+    return result;
 }
 Result<DerivedImpactResult> AbilitySystem::reportDerivedHit(Identity emitter,
         ayt::entity::EntityHandle target,std::uint32_t part,std::uint32_t segment,
@@ -533,6 +548,7 @@ void AbilitySystem::onUpdate(float) {
            binding->statsGeneration!=at->second.statsGeneration ||
            binding->combatGeneration!=at->second.combatGeneration) {
             (void)_runtime->removeActor(at->first);
+            if(_combos)_combos->removeActor(at->first);
             at=_actors.erase(at);
         } else ++at;
     }

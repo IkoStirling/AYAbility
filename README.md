@@ -28,9 +28,10 @@ An active character skill may instead use the Area behavior, with its own cost
 and cooldown and no equipment requirement. The composition root registers its
 Combat area definition and candidate-provider factory via `configureAreaSkill`.
 Gameplay then calls `castArea(actor, skill)` or `stopArea(areaId)`. Combat owns
-membership and effect lifetimes, including source-death cleanup. Normal Stats
-capacity policies apply to life-capacity modifiers; they do not restore an exact
-pre-effect HP snapshot.
+membership and effect lifetimes, including source-death cleanup. A Combat effect
+binding may choose KeepCurrent, RestoreSnapshot, or RestoreNetDelta when a
+life-capacity modifier ends; Stats publishes removal and current restoration
+atomically. Overlapping exact-restoration effects on the same life pool reject.
 With the optional 2D adapter, `configureAreaSkill2D` accepts a source-following
 circle radius, XY offset, physics layer mask and optional dynamic selection
 predicate. The source needs a Transform; targets need current 2D RigidBody
@@ -88,8 +89,33 @@ grants must exist in the installed catalog; duplicate grants or multiple equippe
 slots are rejected. These components are authoring defaults, not live ammo or
 cooldown checkpoints.
 
-An editor, arbitrary behavior graphs, full area release provenance, Combo,
-3D delivery, exact HP snapshot restoration and checkpointing remain unimplemented.
+`Runtime::checkpoint` captures live equipment ammo, streak, reload progress and
+character skill cooldowns as owned data. `encodeRuntimeCheckpoint` and
+`decodeRuntimeCheckpoint` provide a versioned JSON payload; restore validates
+all actor/equipment identities and catalog references before replacing state.
+This is the headless Ability portion of a gameplay save. Active stage emissions,
+Combat effects and Stats current values require their own coordinated snapshots.
+
+Box2D contact delivery can map an exact `ColliderHandle` to a Combat part ID with
+`Ability2DDeliverySystem::setHitPart`. The physics query validates that collider's
+generation. This supports distinct hit parts on multiple shapes of one body;
+whole-body overlap stages still report part zero.
+
+`ComboTracker` is independent fixed-tick sequence content. Configure definitions
+with `AbilitySystem::configureCombos`; accepted releases record skill IDs or
+unskilled action IDs and return completed combo events. A rejected release does
+not advance a combo. Content decides what a completed combo triggers.
+
+`AYAbility::Physics3D` is an optional Jolt adapter. `delivery3D` profiles in the
+same authoring document specify world-space velocity, radius and collision
+responses. `installAbility3D(world, physicsManager, document, effects)` preflights
+the profiles and installs Ability/Combat/Stats; gameplay still uses `castDerived`
+or `fireDelivered`. A World installs either the 2D or the 3D adapter because both
+consume the same emissions. Jolt currently reports body identity only, so 3D
+contact stages report part zero. Keep PhysicsManager alive through World shutdown.
+
+An editor, arbitrary behavior graphs, full area release provenance, 3D area
+geometry and coordinated World checkpointing remain unimplemented.
 The [execution plan](../../AYDocs/AYABILITY-IMPLEMENTATION-PLAN.md) tracks those
 stages. The module is registered as a Git submodule and does not require renderer, input devices or
 physics to build its Core.

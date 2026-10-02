@@ -84,7 +84,13 @@ Result<void> Ability2DDeliverySystem::configure(const AuthoringDocument& documen
 void Ability2DDeliverySystem::bind(ayt::entity::World& world,AbilitySystem& ability,
     ayt::physics::PhysicsManager& physics) {
     _world=&world;_ability=&ability;_physics=&physics;
-    _projectiles.clear();_errors.clear();
+    _projectiles.clear();_hitParts.clear();_errors.clear();
+}
+void Ability2DDeliverySystem::setHitPart(ayt::physics::ColliderHandle collider,
+        std::uint32_t part) {
+    if(!collider)return;
+    if(part)_hitParts.insert_or_assign(collider,part);
+    else _hitParts.erase(collider);
 }
 ayt::entity::EntityHandle Ability2DDeliverySystem::target(ayt::physics::BodyHandle body) const {
     for(auto* entity:_world->getAllEntities()) {
@@ -189,8 +195,10 @@ void Ability2DDeliverySystem::onUpdate(float fixedSeconds) {
                         const bool combatant=candidate.isValid() &&
                             static_cast<bool>(ayt::combat::bindCombatant(*_world,candidate));
                         if(!ownBody && combatant) {
+                            const auto part=_hitParts.contains(hit.collider)?
+                                _hitParts.at(hit.collider):0;
                             auto impact=_ability->reportDerivedHit(projectile.command.emitter,candidate,
-                                0,projectile.age,{std::array<float,3>{hit.point.x,
+                                part,projectile.age,{std::array<float,3>{hit.point.x,
                                     hit.point.y,hit.point.z}});
                             if(!impact && impact.error().code==Error::Stale)finish=true;
                             else if(!impact && impact.error().code!=Error::Duplicate)
@@ -221,6 +229,8 @@ void Ability2DDeliverySystem::onUpdate(float fixedSeconds) {
 Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
     AbilitySystem& ability,ayt::physics::PhysicsManager& physics) {
     if(!physics.world2D())return invalid<Ability2DDeliverySystem*>("2D physics world unavailable");
+    if(world.findSystemByName("Ability3DDeliverySystem"))
+        return invalid<Ability2DDeliverySystem*>("3D delivery already owns emissions");
     if(!world.findSystemByName("Ability2DDeliverySystem"))
         world.registerSystem<Ability2DDeliverySystem>(150,ayt::entity::SystemLane::Sim);
     auto* adapter=dynamic_cast<Ability2DDeliverySystem*>(
@@ -263,6 +273,8 @@ Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
 Result<Ability2DDeliverySystem*> installAbility2D(ayt::entity::World& world,
     ayt::physics::PhysicsManager& physics,const AuthoringDocument& document,
     const OwnedEffectBindings& effects,const AreaSelectionBindings2D& selections) {
+    if(world.findSystemByName("Ability3DDeliverySystem"))
+        return invalid<Ability2DDeliverySystem*>("3D delivery already owns emissions");
     if(auto valid=validateOwnedEffectBindings(document,effects);!valid)
         return std::unexpected(valid.error());
     Ability2DDeliverySystem checked;

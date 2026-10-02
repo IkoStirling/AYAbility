@@ -52,6 +52,18 @@ struct WorldFixture {
 };
 }
 TEST_SUITE(AbilityEntityTests)
+TEST_CASE(accepted_fire_releases_match_combo_without_manual_cross_system_events) {
+    WorldFixture f;
+    CHECK_TRUE(f.ability->configureCombos({{700,{{10,0},{10,4}}}}).has_value());
+    CHECK_TRUE(f.ability->addEquipment(f.source,1001,101).has_value());
+    CHECK_TRUE(f.ability->equip(f.source,1001).has_value());
+    auto first=f.ability->fireAt(f.source).value();
+    CHECK_TRUE(first.combos.empty());
+    for(int i=0;i<4;++i)f.world.fixedUpdate(1.0f/60);
+    auto second=f.ability->fireAt(f.source).value();
+    CHECK_TRUE(second.combos.size()==1 && second.combos[0].combo==700);
+    CHECK_TRUE(second.combos[0].actor.object==f.source.id);
+}
 TEST_CASE(repeatable_authored_components_initialize_on_first_use_independent_of_display_name) {
     WorldFixture f;
     auto* actor=f.world.getEntityByHandle(f.source);

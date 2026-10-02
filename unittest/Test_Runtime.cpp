@@ -1,9 +1,30 @@
 #include <AYTest.h>
 #include <AYAbility/Derived.h>
+#include <AYAbility/Authoring.h>
 #include "Fixtures.h"
 #include <stdexcept>
 
 TEST_SUITE(AbilityRuntimeTests)
+TEST_CASE(checkpoint_restores_ammo_cadence_skill_cooldown_and_rejects_invalid_state_atomically) {
+    auto runtime=fixture::runtime();
+    CHECK_TRUE(runtime.addEquipment(fixture::actor,fixture::pistol,101).has_value());
+    CHECK_TRUE(runtime.equip(fixture::actor,fixture::pistol).has_value());
+    CHECK_TRUE(runtime.grant(fixture::actor,202,1).has_value());
+    auto first=runtime.fire({fixture::actor,1,202}).value();
+    auto saved=runtime.checkpoint().value();
+    auto wire=encodeRuntimeCheckpoint(saved).value();
+    saved=decodeRuntimeCheckpoint(wire).value();
+    CHECK_FALSE(decodeRuntimeCheckpoint(R"({"version":2})").has_value());
+    auto invalid=saved;
+    invalid.equipment.front().ammunition=-1;
+    CHECK_FALSE(runtime.restoreCheckpoint(invalid).has_value());
+    CHECK_TRUE(runtime.equipment(fixture::pistol)->ammunition==first.ammunitionRemaining);
+    auto restored=fixture::runtime();
+    CHECK_TRUE(restored.restoreCheckpoint(saved).has_value());
+    CHECK_TRUE(restored.equipment(fixture::pistol)->ammunition==first.ammunitionRemaining);
+    CHECK_TRUE(restored.fire({fixture::actor,2,202}).error().code==Error::Cooldown);
+    CHECK_TRUE(restored.fire({fixture::actor,9,202})->execution==saved.nextExecution);
+}
 TEST_CASE(shared_fire_behavior_preserves_each_weapon_state) {
     auto runtime=fixture::runtime();
     CHECK_TRUE(runtime.addEquipment(fixture::actor,fixture::pistol,101).has_value());

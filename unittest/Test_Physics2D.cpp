@@ -7,6 +7,7 @@
 #include <AYEntity/components/RigidBodyComponent.h>
 #include <AYEntity/components/TransformComponent.h>
 #include <AYPhysics/PhysicsWorld2D.h>
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include "Fixtures.h"
@@ -92,6 +93,7 @@ TEST_CASE(authored_contact_rules_cancel_and_source_death) {
     collider.radius=0.2f;
     ayt::physics::ColliderHandle shape=0;
     CHECK_TRUE(manager->world2D()->createCollider(collider,shape)==ayt::physics::PhysResult::Ok);
+    physics->setHitPart(shape,7);
     CHECK_TRUE(manager->stepAndWait(1.0f/60)==ayt::physics::PhysResult::Ok);
     auto* rigid=targetEntity->addComponent<ayt::entity::RigidBodyComponent>();
     rigid->setPhysicsDimension(ayt::entity::RigidBodyComponent::PhysicsDimension::TwoD);
@@ -101,6 +103,8 @@ TEST_CASE(authored_contact_rules_cancel_and_source_death) {
     world.fixedUpdate(1.0f/60);
     auto* stats=targetEntity->getComponent<ayt::stats::StatsComponent>();
     CHECK_TRUE(stats->read(ayt::stats::statId("health"))->current==85);
+    CHECK_TRUE(std::any_of(combat->outcomes().begin(),combat->outcomes().end(),
+        [](const auto& outcome){return outcome.part==7;}));
     CHECK_TRUE(physics->errors().empty());
     for(int i=0;i<6;++i)world.fixedUpdate(1.0f/60);
     sourceTransform->setPosition(0.0f,0.0f,0.0f);

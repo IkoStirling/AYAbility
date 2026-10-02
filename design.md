@@ -19,3 +19,24 @@ cooldowns; explicit runtime operations own subsequent changes.
 Actor defaults and Scene data do not include active cooldowns, ammunition,
 release timelines, live Combat effects or Stats current-state checkpoints.
 Runtime save/restore needs a separate coordinated checkpoint contract.
+
+The Core `RuntimeCheckpoint` is that Ability-owned portion: a versioned owned
+snapshot of actors, selected equipment, ammunition, reload/cadence, skill levels,
+cooldowns and next execution ID. Restore builds and validates a replacement
+against the installed catalog before publishing it, so invalid input leaves the
+old runtime intact. JSON encoding lives in Authoring. World/Entity and active
+delivery lifetimes are outside this Core snapshot.
+
+For 2D contact stages, Box2D returns an exact collider handle and the delivery
+adapter maps it to an authored Combat part ID. Part-policy deduplication uses
+the reported part. Body-only overlaps have no shape identity and use part zero.
+
+The independent ComboTracker matches accepted release tokens against ordered
+fixed-tick gaps. AbilitySystem records a token after each successful release and
+returns matched events without coupling combo content to hit/damage policy.
+
+Physics3D uses Jolt raycasts for moving stages and sphere overlaps for explosion
+and hazard stages. Version-1 authored 3D profiles undergo full stage coverage
+preflight before the simple install mutates World. A World can own only one
+physics delivery adapter because emissions are a destructive queue. Current Jolt
+queries expose body, not exact collider, so 3D reports part zero.

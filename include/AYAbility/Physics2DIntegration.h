@@ -19,6 +19,9 @@ public:
     Result<void> configure(const AuthoringDocument& document);
     void bind(ayt::entity::World& world,AbilitySystem& ability,
         ayt::physics::PhysicsManager& physics);
+    /// Map a live Box2D collider to a Combat hit-part ID for contact stages.
+    /// Zero removes the mapping; overlap stages still use whole-body part zero.
+    void setHitPart(ayt::physics::ColliderHandle collider,std::uint32_t part);
     const std::vector<Diagnostic>& errors() const noexcept { return _errors; }
 private:
     struct Projectile {
@@ -34,6 +37,7 @@ private:
     ayt::physics::PhysicsManager* _physics=nullptr;
     std::map<std::pair<Id,Id>,Delivery2DProfile> _profiles;
     std::map<Identity,Projectile> _projectiles;
+    std::map<ayt::physics::ColliderHandle,std::uint32_t> _hitParts;
     std::vector<Diagnostic> _errors;
 };
 /// Register one World-owned adapter in the Sim lane after AbilitySystem.

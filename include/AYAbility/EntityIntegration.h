@@ -1,6 +1,7 @@
 #pragma once
 #include <AYAbility/Runtime.h>
 #include <AYAbility/Derived.h>
+#include <AYAbility/Combo.h>
 #include <AYCombat/EntityIntegration.h>
 
 namespace ayt::ability {
@@ -26,6 +27,7 @@ public:
 #undef AY_CURRENT_CLASS
 struct FireActionResult {
     FireEvent shot;
+    std::vector<ComboEvent> combos;
     std::vector<ayt::combat::ActionResult> hits;
     /// Advanced per-projectile outcomes retain Combat source, attack and request identities.
     std::vector<ayt::combat::CombatOutcome> settlements;
@@ -35,11 +37,13 @@ struct FireActionResult {
 struct AreaCastResult {
     ActivationEvent cast;
     std::uint64_t area=0;
+    std::vector<ComboEvent> combos;
 };
 struct DerivedCastResult {
     ActivationEvent cast;
     /// Give these immutable spawn commands to a projectile/physics host.
     std::vector<EmissionCommand> emissions;
+    std::vector<ComboEvent> combos;
 };
 struct DerivedImpactResult {
     /// Full cast snapshot, including the original equipment provider when present.
@@ -54,6 +58,7 @@ struct DerivedImpactResult {
 struct FireDeliveryResult {
     FireEvent shot;
     std::vector<EmissionCommand> emissions;
+    std::vector<ComboEvent> combos;
 };
 /// Composition-time candidate factory. Each cast owns the returned callback until its area ends.
 using AreaProviderFactory=std::function<ayt::combat::Result<ayt::combat::AreaCandidateProvider>(
@@ -79,6 +84,8 @@ public:
     Result<void> equip(ayt::entity::EntityHandle actor,Id equipmentInstance);
     Result<void> grant(ayt::entity::EntityHandle actor,Id skill,std::uint32_t level);
     Result<void> setLevel(ayt::entity::EntityHandle actor,Id skill,std::uint32_t level);
+    /// Install independent fixed-tick combo content. Accepted releases record tokens automatically.
+    Result<void> configureCombos(std::vector<ComboDefinition> definitions);
     Result<void> beginReload(ayt::entity::EntityHandle actor);
     /// A missing target still fires; target combat failures are reported in FireActionResult.
     /// Source death/stun and skill resource failure reject before ammo or cooldown changes.
@@ -125,6 +132,7 @@ private:
     ayt::combat::CombatSystem* _combat=nullptr;
     std::shared_ptr<const Catalog> _catalog;
     std::optional<Runtime> _runtime;
+    std::optional<ComboTracker> _combos;
     std::map<Identity,ActorRecord> _actors;
     struct AreaSkill {
         ayt::combat::AreaDefinition definition;
@@ -165,6 +173,7 @@ private:
         std::uint64_t tick,std::optional<std::array<float,3>> origin={});
     Result<Identity> actorIdentity(ayt::entity::EntityHandle);
     Result<void> initializeAuthored(ayt::entity::EntityHandle,Identity,ActorRecord&);
+    std::vector<ComboEvent> recordCombo(Identity actor,Id token,std::uint64_t tick);
     Identity equipmentIdentity(Id instance) const noexcept;
     Result<void> chargeCost(ayt::entity::EntityHandle actor,
         const std::optional<std::pair<std::string,Value>>& cost);

@@ -19,6 +19,20 @@ struct Delivery2DBinding {
     Id action=0,stage=0;
     Delivery2DProfile profile;
 };
+enum class CollisionResponse3D { Stop, PassThrough };
+/// Physics-independent world-space values interpreted by the optional Jolt adapter.
+struct Delivery3DProfile {
+    std::array<float,3> velocity{};
+    std::array<float,3> spawnOffset{};
+    float radius=0.0f;
+    std::uint32_t layerMask=0xffffffffu;
+    std::uint32_t reverseAfterTicks=0;
+    bool ignoreSource=true;
+    CollisionResponse3D obstacle=CollisionResponse3D::Stop;
+    CollisionResponse3D target=CollisionResponse3D::Stop;
+};
+struct Delivery3DBinding { Id action=0,stage=0;Delivery3DProfile profile; };
+Result<void> validateDelivery3DProfile(const Delivery3DProfile& profile);
 Result<void> validateDelivery2DProfile(const Delivery2DProfile& profile);
 /// Physics-independent source-following circle and Combat permission for an Area skill.
 struct AreaSkill2DBinding {
@@ -50,6 +64,7 @@ struct AuthoringDocument {
     std::vector<DeliveryBinding> fireDeliveries;
     std::vector<DeliveryBinding> derivedSkills;
     std::vector<Delivery2DBinding> delivery2D;
+    std::vector<Delivery3DBinding> delivery3D;
     /// Bind source-following 2D Area skills during installAbility2D.
     std::vector<AreaSkill2DBinding> areaSkills2D;
     /// Combat-owned definitions are supplied at composition time under these references.
@@ -58,4 +73,7 @@ struct AuthoringDocument {
 Result<AuthoringDocument> loadAuthoring(std::string_view json);
 Result<std::string> saveAuthoring(const AuthoringDocument& document);
 Result<std::shared_ptr<const Catalog>> compileAuthoring(const AuthoringDocument& document);
+/// Versioned portable payload for RuntimeCheckpoint; restore validates against the installed catalog.
+Result<std::string> encodeRuntimeCheckpoint(const RuntimeCheckpoint& checkpoint);
+Result<RuntimeCheckpoint> decodeRuntimeCheckpoint(std::string_view json);
 } // namespace ayt::ability
