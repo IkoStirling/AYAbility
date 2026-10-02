@@ -80,5 +80,5 @@ does not mutate an already installed catalog.
 An editor, arbitrary behavior graphs, full area release provenance, Combo,
 3D delivery, exact HP snapshot restoration and checkpointing remain unimplemented.
 The [execution plan](../../AYDocs/AYABILITY-IMPLEMENTATION-PLAN.md) tracks those
-stages. The module has no remote and does not require renderer, input devices or
+stages. The module is registered as a Git submodule and does not require renderer, input devices or
 physics to build its Core.
