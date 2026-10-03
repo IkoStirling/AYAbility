@@ -111,8 +111,11 @@ same authoring document specify world-space velocity, radius and collision
 responses. `installAbility3D(world, physicsManager, document, effects)` preflights
 the profiles and installs Ability/Combat/Stats; gameplay still uses `castDerived`
 or `fireDelivered`. A World installs either the 2D or the 3D adapter because both
-consume the same emissions. Jolt currently reports body identity only, so 3D
-contact stages report part zero. Keep PhysicsManager alive through World shutdown.
+consume the same emissions. Jolt contact rays now report exact colliders even
+within a compound. At composition time, `Ability3DDeliverySystem::setHitPart`
+maps each live collider to a Combat part ID; zero removes a mapping. Unmapped
+contacts and body-only overlap stages use part zero. Rebind after collider/world
+replacement; `bind` clears mappings. Keep PhysicsManager alive through World shutdown.
 
 An editor, arbitrary behavior graphs, full area release provenance, 3D area
 geometry and coordinated World checkpointing remain unimplemented.

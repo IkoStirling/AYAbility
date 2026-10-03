@@ -7,6 +7,7 @@
 #include <AYEntity/components/TransformComponent.h>
 #include <AYPhysics/PhysicsWorld3D.h>
 #include "Fixtures.h"
+#include <algorithm>
 
 using namespace ayt::ability;
 TEST_SUITE(AbilityPhysics3DTests)
@@ -62,6 +63,7 @@ TEST_CASE(jolt_contact_reports_to_ability_and_combat) {
     CHECK_TRUE(delivery->configure(30,1,deliveryProfile).has_value());
     deliveryProfile.radius=-1;
     CHECK_FALSE(delivery->configure(30,1,deliveryProfile).has_value());
+    deliveryProfile.radius=0.5f;
     ayt::physics::RigidbodyDesc body{};
     body.type=ayt::physics::BodyType::Dynamic;
     body.position={1,0,0};
@@ -74,6 +76,13 @@ TEST_CASE(jolt_contact_reports_to_ability_and_combat) {
     collider.radius=0.2f;
     ayt::physics::ColliderHandle shape=0;
     CHECK_TRUE(manager->world3D()->createCollider(collider,shape)==ayt::physics::PhysResult::Ok);
+    delivery->setHitPart(shape,7);
+    // A second shape on the same body must not replace the contact shape.
+    auto secondCollider=collider;
+    secondCollider.offset={0,2,0};
+    ayt::physics::ColliderHandle secondShape=0;
+    CHECK_TRUE(manager->world3D()->createCollider(secondCollider,secondShape)==ayt::physics::PhysResult::Ok);
+    delivery->setHitPart(secondShape,8);
     for(int i=0;i<5;++i)
         CHECK_TRUE(manager->stepAndWait(1.0f/60)==ayt::physics::PhysResult::Ok);
     ayt::math::Ray probe{};probe.origin={0,0,0};probe.dir={1,0,0};
@@ -81,6 +90,7 @@ TEST_CASE(jolt_contact_reports_to_ability_and_combat) {
     CHECK_TRUE(manager->world3D()->raycastSync(probe,probeHit)==ayt::physics::PhysResult::Ok);
     CHECK_TRUE(probeHit.hit);
     CHECK_TRUE(probeHit.body==handle);
+    CHECK_TRUE(probeHit.collider==shape);
     auto* rigid=targetEntity->addComponent<ayt::entity::RigidBodyComponent>();
     rigid->setPhysicsDimension(ayt::entity::RigidBodyComponent::PhysicsDimension::ThreeD);
     rigid->setBodyHandle(handle);
@@ -88,6 +98,24 @@ TEST_CASE(jolt_contact_reports_to_ability_and_combat) {
     world.fixedUpdate(1.0f/60);
     auto* stats=targetEntity->getComponent<ayt::stats::StatsComponent>();
     CHECK_INT_EQ(stats->read(ayt::stats::statId("health"))->current,85);
+    CHECK_TRUE(std::any_of(combat->outcomes().begin(),combat->outcomes().end(),
+        [](const auto& outcome){return outcome.part==7;}));
+    CHECK_TRUE(delivery->errors().empty());
+    deliveryProfile.spawnOffset={0,2,0};
+    CHECK_TRUE(delivery->configure(30,1,deliveryProfile).has_value());
+    CHECK_TRUE(ability->castDerived(source,404).has_value());
+    world.fixedUpdate(1.0f/60);
+    CHECK_INT_EQ(stats->read(ayt::stats::statId("health"))->current,70);
+    CHECK_TRUE(std::any_of(combat->outcomes().begin(),combat->outcomes().end(),
+        [](const auto& outcome){return outcome.part==8;}));
+    delivery->setHitPart(shape,0);
+    deliveryProfile.spawnOffset={0,0,0};
+    CHECK_TRUE(delivery->configure(30,1,deliveryProfile).has_value());
+    CHECK_TRUE(ability->castDerived(source,404).has_value());
+    world.fixedUpdate(1.0f/60);
+    CHECK_INT_EQ(stats->read(ayt::stats::statId("health"))->current,55);
+    CHECK_TRUE(std::any_of(combat->outcomes().begin(),combat->outcomes().end(),
+        [](const auto& outcome){return outcome.part==0;}));
     CHECK_TRUE(delivery->errors().empty());
     world.shutdown();
     manager->shutdown();

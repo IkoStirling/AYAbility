@@ -16,6 +16,10 @@ public:
     Result<void> configure(const AuthoringDocument& document);
     void bind(ayt::entity::World& world,AbilitySystem& ability,
         ayt::physics::PhysicsManager& physics);
+    /// Map an exact Jolt collider to a Combat hit-part ID for contact stages.
+    /// Zero removes the mapping. Overlap stages retain whole-body part zero.
+    /// Clear/rebind mappings when collider handles or the physics world change.
+    void setHitPart(ayt::physics::ColliderHandle collider,std::uint32_t part);
     const std::vector<Diagnostic>& errors() const noexcept { return _errors; }
 private:
     struct Projectile {
@@ -31,6 +35,7 @@ private:
     ayt::physics::PhysicsManager* _physics=nullptr;
     std::map<std::pair<Id,Id>,Delivery3DProfile> _profiles;
     std::map<Identity,Projectile> _projectiles;
+    std::map<ayt::physics::ColliderHandle,std::uint32_t> _hitParts;
     std::vector<Diagnostic> _errors;
 };
 /// Install one delivery dimension per World. Keep PhysicsManager alive through shutdown.

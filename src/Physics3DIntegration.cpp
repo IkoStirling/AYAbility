@@ -50,7 +50,12 @@ Result<void> Ability3DDeliverySystem::configure(const AuthoringDocument& documen
 void Ability3DDeliverySystem::bind(ayt::entity::World& world,AbilitySystem& ability,
         ayt::physics::PhysicsManager& physics) {
     _world=&world;_ability=&ability;_physics=&physics;
-    _projectiles.clear();_errors.clear();
+    _projectiles.clear();_hitParts.clear();_errors.clear();
+}
+void Ability3DDeliverySystem::setHitPart(ayt::physics::ColliderHandle collider,std::uint32_t part) {
+    if(!collider)return;
+    if(part)_hitParts.insert_or_assign(collider,part);
+    else _hitParts.erase(collider);
 }
 ayt::entity::EntityHandle Ability3DDeliverySystem::target(ayt::physics::BodyHandle body) const {
     for(auto* entity:_world->getAllEntities()) {
@@ -153,8 +158,9 @@ void Ability3DDeliverySystem::onUpdate(float fixedSeconds) {
                         const bool combatant=candidate.isValid() &&
                             static_cast<bool>(ayt::combat::bindCombatant(*_world,candidate));
                         if(!ownBody && combatant) {
+                            const auto part=_hitParts.contains(hit.collider)?_hitParts.at(hit.collider):0;
                             auto impact=_ability->reportDerivedHit(projectile.command.emitter,candidate,
-                                0,projectile.age,{std::array<float,3>{hit.point.x,
+                                part,projectile.age,{std::array<float,3>{hit.point.x,
                                     hit.point.y,hit.point.z}});
                             if(!impact && impact.error().code==Error::Stale)finish=true;
                             else if(!impact && impact.error().code!=Error::Duplicate)

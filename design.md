@@ -38,5 +38,11 @@ returns matched events without coupling combo content to hit/damage policy.
 Physics3D uses Jolt raycasts for moving stages and sphere overlaps for explosion
 and hazard stages. Version-1 authored 3D profiles undergo full stage coverage
 preflight before the simple install mutates World. A World can own only one
-physics delivery adapter because emissions are a destructive queue. Current Jolt
-queries expose body, not exact collider, so 3D reports part zero.
+physics delivery adapter because emissions are a destructive queue. Jolt rays
+now resolve exact generation-checked ColliderHandles through compound shapes.
+The 3D adapter maps them through `setHitPart(collider, part)` before reporting
+the contact to Combat, matching the 2D path. Zero erases a mapping; `bind`
+clears it, and a newly generated collider does not inherit an old mapping.
+Body-only overlaps and unmapped contacts still use part zero. The real Jolt
+integration test hits two different shapes on one body and checks parts 7/8,
+then removes the first mapping and checks part zero and resulting health.
