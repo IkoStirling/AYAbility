@@ -1,5 +1,9 @@
 # AYAbility
 
+完整测试层包含已构建的 Entity、Physics2D 和 Physics3D 集成分区。
+`unittest/test-features.json` 在 CMake 生成阶段根据实际测试 target 记录可用分区，
+清单审计只比较本配置编译的用例。
+
 Local-only, no-remote action and skill runtime. Core resolves definitions and
 executes headless Fire, Area and Derived behaviors. Fire uses distinct
 equipment configurations; equipment instances own ammunition/cadence, while actor
