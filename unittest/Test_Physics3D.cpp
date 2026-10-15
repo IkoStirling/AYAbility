@@ -30,6 +30,8 @@ TEST_CASE(jolt_contact_reports_to_ability_and_combat) {
     backend.maxContactConstraints=1024;
     auto manager=ayt::physics::PhysicsManager::create(backend);
     CHECK_TRUE(manager && manager->world3D());
+    ayt::physics::PhysicsDebugDrawOptions debugOptions;debugOptions.enabled=true;
+    CHECK(manager->debugDraw().configure(debugOptions)==ayt::physics::PhysResult::Ok);
     AuthoringDocument document;
     document.actions={{.id=30,.behaviorId=derived::Behavior,
         .defaults={{derived::CooldownTicks,Unit::Ticks,1}}}};
@@ -117,6 +119,9 @@ TEST_CASE(jolt_contact_reports_to_ability_and_combat) {
     CHECK_TRUE(std::any_of(combat->outcomes().begin(),combat->outcomes().end(),
         [](const auto& outcome){return outcome.part==0;}));
     CHECK_TRUE(delivery->errors().empty());
+    const auto debugRecords=manager->debugDraw().consumeRecords();
+    CHECK(std::any_of(debugRecords.begin(),debugRecords.end(),[&](const auto& record){return record.category==ayt::physics::PhysicsDebugCategory::Ability && record.entityId==target.id && record.hit;}));
+    CHECK(std::any_of(debugRecords.begin(),debugRecords.end(),[](const auto& record){return record.category==ayt::physics::PhysicsDebugCategory::Ability && !record.lines.empty();}));
     world.shutdown();
     manager->shutdown();
 }

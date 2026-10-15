@@ -71,6 +71,26 @@ void Ability3DDeliverySystem::onUpdate(float fixedSeconds) {
     if(!_world || !_ability || !_physics)return;
     auto* physics=_physics->world3D();
     if(!physics){_errors.push_back({Error::Stale,"3D physics world unavailable",{}});return;}
+    auto debugRegion=[&](ayt::math::FVector3 origin,ayt::math::FVector3 end,float radius,bool hit,ayt::physics::PhysResult status) {
+        if(!_physics->debugDraw().options().enabled) return;
+        ayt::physics::PhysicsDebugRecord record;record.category=ayt::physics::PhysicsDebugCategory::Ability;
+        record.dimension=ayt::physics::PhysicsDimension::ThreeD;record.anchor=origin;record.hit=hit;record.status=status;
+        record.label=radius>0?"Ability area test":"Ability swept segment";
+        const uint32_t color=status!=ayt::physics::PhysResult::Ok?0xff00ffffu:hit?0xff0000ffu:0xff00ff00u;
+        if(radius>0) {ayt::physics::ColliderDesc shape;shape.shape=ayt::physics::ColliderShape::Sphere;shape.radius=radius;
+            record.lines=ayt::physics::PhysicsDebugDraw::colliderLines(shape,origin,ayt::math::FQuaternion::identity(),record.dimension,color);
+        } else record.lines.push_back({origin,end,color});
+        (void)_physics->debugDraw().recordGeometry(std::move(record));
+    };
+    auto debugImpact=[&](const auto& impact,ayt::entity::EntityHandle target,ayt::math::FVector3 point) {
+        if(!_physics->debugDraw().options().enabled) return;
+        const bool affected=impact && (impact->interaction?impact->interaction->decision.allowed:impact->settlement.state==ayt::combat::OutcomeState::Applied);
+        ayt::physics::PhysicsDebugRecord record;record.category=ayt::physics::PhysicsDebugCategory::Ability;record.dimension=ayt::physics::PhysicsDimension::ThreeD;
+        record.entityId=target.id;record.anchor=point;record.hit=affected;record.label=affected?"Ability affected target":"Ability target denied/duplicate/failed";
+        const uint32_t color=affected?0xff0000ffu:0xff00ff00u;
+        record.lines={{point-ayt::math::FVector3{.15f,0,0},point+ayt::math::FVector3{.15f,0,0},color},{point-ayt::math::FVector3{0,.15f,0},point+ayt::math::FVector3{0,.15f,0},color}};
+        (void)_physics->debugDraw().recordGeometry(std::move(record));
+    };
     std::set<Identity> advanced;
     for(std::size_t round=0;round<16;++round) {
         auto commands=_ability->takeEmissions();
@@ -115,6 +135,7 @@ void Ability3DDeliverySystem::onUpdate(float fixedSeconds) {
                 std::vector<ayt::physics::BodyHandle> bodies;
                 const auto status=physics->overlapSphereSync(projectile.position,
                     projectile.profile.radius,bodies,projectile.profile.layerMask);
+                debugRegion(projectile.position,projectile.position,projectile.profile.radius,!bodies.empty(),status);
                 if(status!=ayt::physics::PhysResult::Ok)
                     _errors.push_back({Error::Invalid,"3D overlap query failed",{}});
                 else for(auto body:bodies) {
@@ -124,6 +145,7 @@ void Ability3DDeliverySystem::onUpdate(float fixedSeconds) {
                         auto impact=_ability->reportDerivedHit(projectile.command.emitter,candidate,
                             0,projectile.age,{std::array<float,3>{projectile.position.x,
                                 projectile.position.y,projectile.position.z}});
+                        debugImpact(impact,candidate,projectile.position);
                         if(!impact && impact.error().code==Error::Stale)finish=true;
                         else if(!impact && impact.error().code!=Error::Duplicate)
                             _errors.push_back(impact.error());
@@ -147,6 +169,7 @@ void Ability3DDeliverySystem::onUpdate(float fixedSeconds) {
                         ayt::math::Ray ray{};ray.origin=cursor;ray.dir=direction;
                         ayt::physics::RaycastHit hit{};
                         const auto status=physics->raycastSync(ray,hit,projectile.profile.layerMask);
+                        debugRegion(cursor,cursor+direction*remaining,0,hit.hit && hit.distance<=remaining,status);
                         if(status!=ayt::physics::PhysResult::Ok) {
                             _errors.push_back({Error::Invalid,"3D raycast query failed",{}});
                             break;
@@ -162,6 +185,7 @@ void Ability3DDeliverySystem::onUpdate(float fixedSeconds) {
                             auto impact=_ability->reportDerivedHit(projectile.command.emitter,candidate,
                                 part,projectile.age,{std::array<float,3>{hit.point.x,
                                     hit.point.y,hit.point.z}});
+                            debugImpact(impact,candidate,hit.point);
                             if(!impact && impact.error().code==Error::Stale)finish=true;
                             else if(!impact && impact.error().code!=Error::Duplicate)
                                 _errors.push_back(impact.error());

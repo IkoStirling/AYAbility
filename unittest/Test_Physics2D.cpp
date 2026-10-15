@@ -30,6 +30,8 @@ TEST_CASE(authored_contact_rules_cancel_and_source_death) {
     backend.kind2D=ayt::physics::BackendKind::DefaultBox2D;
     auto manager=ayt::physics::PhysicsManager::create(backend);
     CHECK_TRUE(manager && manager->world2D());
+    ayt::physics::PhysicsDebugDrawOptions debugOptions;debugOptions.enabled=true;
+    CHECK(manager->debugDraw().configure(debugOptions)==ayt::physics::PhysResult::Ok);
     std::ifstream input(std::string(AY_ABILITY_EXAMPLE_DIR)+"/contact2d.ability.json");
     CHECK_TRUE(input.good());
     const std::string authored(std::istreambuf_iterator<char>{input},{});
@@ -167,6 +169,9 @@ TEST_CASE(authored_contact_rules_cancel_and_source_death) {
     CHECK_TRUE(stats->read(ayt::stats::statId("health"))->current==70);
     CHECK_TRUE(combat->hits().activeAttacks()==0);
     CHECK_TRUE(physics->errors().empty());
+    const auto debugRecords=manager->debugDraw().consumeRecords();
+    CHECK(std::any_of(debugRecords.begin(),debugRecords.end(),[&](const auto& record){return record.category==ayt::physics::PhysicsDebugCategory::Ability && record.entityId==target.id && record.hit;}));
+    CHECK(std::any_of(debugRecords.begin(),debugRecords.end(),[](const auto& record){return record.category==ayt::physics::PhysicsDebugCategory::Ability && !record.lines.empty();}));
     world.shutdown();
     manager->shutdown();
 }

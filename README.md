@@ -126,3 +126,13 @@ geometry and coordinated World checkpointing remain unimplemented.
 The [execution plan](../../AYDocs/AYABILITY-IMPLEMENTATION-PLAN.md) tracks those
 stages. The module is registered as a Git submodule and does not require renderer, input devices or
 physics to build its Core.
+
+## Editor diagnostic observations (2026-10-15)
+
+The optional Physics2D/Physics3D delivery adapters record finite swept segments, area regions and actual settlement observations through PhysicsManager::debugDraw. A red target marker means Applied/allowed; denied, duplicate or failed reports remain distinct. This never changes hit reservation, permission, simulation cadence or gameplay callbacks.
+Capture follows the shared debug lifetime, freeze and budget; disabled capture
+has no retained history. Diagnostics are not checkpointed or serialized.
+
+Verification: audited full inventory 37/37 passed, including actual 2D/3D
+settlement debug markers. Report:
+`out/debug-visualization-20261015/ability-full/0c5fe02b87bc4c8d902acf3e22eb4022/cases.json`.

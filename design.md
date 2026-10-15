@@ -46,3 +46,9 @@ clears it, and a newly generated collider does not inherit an old mapping.
 Body-only overlaps and unmapped contacts still use part zero. The real Jolt
 integration test hits two different shapes on one body and checks parts 7/8,
 then removes the first mapping and checks part zero and resulting health.
+
+## Editor diagnostic observations (2026-10-15)
+
+The optional Physics2D/Physics3D delivery adapters record finite swept segments, area regions and actual settlement observations through PhysicsManager::debugDraw. A red target marker means Applied/allowed; denied, duplicate or failed reports remain distinct. This never changes hit reservation, permission, simulation cadence or gameplay callbacks.
+Capture follows the shared debug lifetime, freeze and budget; disabled capture
+has no retained history. Diagnostics are not checkpointed or serialized.
