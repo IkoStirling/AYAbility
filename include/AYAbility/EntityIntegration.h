@@ -122,6 +122,9 @@ public:
     bool emitterActive(Identity emitter) const noexcept;
     Result<EquipmentState> equipment(Id instance) const;
     Result<GrantedSkill> skill(ayt::entity::EntityHandle actor,Id skill);
+    struct DebugRecord { ayt::entity::EntityHandle actor; std::string label,details; };
+    /// Owned read-only cooldown/equipment/stage observations, at most 512 rows. No hydration or delivery.
+    std::vector<DebugRecord> debugRecords() const;
 private:
     struct ActorRecord {
         ayt::entity::EntityHandle handle;

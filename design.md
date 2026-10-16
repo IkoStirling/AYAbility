@@ -52,3 +52,9 @@ then removes the first mapping and checks part zero and resulting health.
 The optional Physics2D/Physics3D delivery adapters record finite swept segments, area regions and actual settlement observations through PhysicsManager::debugDraw. A red target marker means Applied/allowed; denied, duplicate or failed reports remain distinct. This never changes hit reservation, permission, simulation cadence or gameplay callbacks.
 Capture follows the shared debug lifetime, freeze and budget; disabled capture
 has no retained history. Diagnostics are not checkpointed or serialized.
+
+## Debug content extension (2026-10-15)
+
+AbilitySystem::debugRecords copies up to512 equipment/ammo/reload/fire/skill cooldown and delivery-stage rows from existing runtime state. Stage observations include trigger/predecessor/due/end/progress and hit/open/emitted flags. This const diagnostic entry never hydrates authored grants, drains emissions, advances ticks or changes costs. The optional editor Combat/stages category consumes these owned values.
+
+Module-local regression sources were updated. Runtime tests and interactive editor acceptance are deferred by the current task request; previous validation reports cover the earlier baseline. These changes remain uncommitted until focused runtime checks are requested and pass.

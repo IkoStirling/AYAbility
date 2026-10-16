@@ -1,4 +1,6 @@
 #include <AYAbility/EntityIntegration.h>
+#include <sstream>
+#include <algorithm>
 #include <AYEntity.h>
 #include <AYEntity/ComponentRegistration.h>
 #include <array>
@@ -7,6 +9,41 @@
 #include <set>
 
 namespace ayt::ability {
+
+std::vector<AbilitySystem::DebugRecord> AbilitySystem::debugRecords() const {
+    std::vector<DebugRecord> rows; if(!_runtime || !_combat) return rows;
+    const auto tick=_combat->attributes().tick();
+    auto remaining=[&](std::uint64_t due){return due>tick?due-tick:0;};
+    const auto snapshot=_runtime->checkpoint(); if(!snapshot) return rows;
+    for(const auto& actor:snapshot->actors) {
+        const auto found=_actors.find(actor.identity); if(found==_actors.end()) continue;
+        for(const auto& skill:actor.skills) {
+            if(rows.size()==512) return rows;
+            rows.push_back({found->second.handle,"Skill "+std::to_string(skill.skill),
+                "Tick "+std::to_string(tick)+" | level "+std::to_string(skill.level)+" | cooldown remaining ticks "+std::to_string(remaining(skill.nextReadyTick))});
+        }
+    }
+    for(const auto& equipment:snapshot->equipment) {
+        const auto found=_actors.find(equipment.owner); if(found==_actors.end()) continue;
+        if(rows.size()==512) return rows;
+        rows.push_back({found->second.handle,"Equipment "+std::to_string(equipment.configuration),
+            "Ammo "+std::to_string(equipment.ammunition)+" | fire cooldown ticks "+std::to_string(remaining(equipment.nextFireTick))+
+            " | reloading "+std::to_string(equipment.reloading)+" | reload ticks "+std::to_string(remaining(equipment.reloadUntil))});
+    }
+    for(const auto& [execution,cast]:_derivedCasts) for(const auto& [stageId,stage]:cast.stages) {
+        if(rows.size()==512) return rows;
+        std::ostringstream text;text<<"Cast "<<execution<<" | skill "<<cast.source->skill<<" | release tick "<<cast.source->tick
+            <<" | current tick "<<tick<<" | due "<<stage.dueTick<<" | end "<<stage.endTick
+            <<"\nTrigger "<<int(stage.stage.trigger)<<" | predecessor "<<stage.stage.predecessor<<" | delay "<<stage.stage.delayTicks
+            <<"\nTriggered "<<stage.triggered<<" | emitted "<<stage.emitted<<" | hit "<<stage.hit<<" | open "<<stage.open<<" | ended "<<stage.ended;
+        const auto duration=stage.endTick>stage.dueTick?stage.endTick-stage.dueTick:0;
+        const auto elapsed=tick>stage.dueTick?std::min(tick-stage.dueTick,duration):0;
+        text<<"\nStage progress "<<elapsed<<" / "<<duration<<" ticks";
+        rows.push_back({cast.actor,"Delivery stage "+std::to_string(stageId),text.str()});
+    }
+    return rows;
+}
+
 AY_FINALIZE_REGISTRATION_METADATA(AbilityEquipmentComponent)
 AY_FINALIZE_REGISTRATION_METADATA(AbilitySkillComponent)
 namespace {

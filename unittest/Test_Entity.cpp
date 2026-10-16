@@ -535,4 +535,13 @@ TEST_CASE(derived_scalar_attributes_use_authored_intent_and_source_snapshot) {
     CHECK_TRUE(snapshot && snapshot->interaction && snapshot->interaction->decision.allowed);
     CHECK_INT_EQ(f.stats(f.target).read(ayt::stats::statId("health_max"))->base,104);
 }
+TEST_CASE(debug_records_copy_equipment_cooldowns_without_consuming_or_advancing_gameplay) {
+    WorldFixture f;CHECK_TRUE(f.ability->addEquipment(f.source,1001,101).has_value());CHECK_TRUE(f.ability->equip(f.source,1001).has_value());
+    CHECK_TRUE(f.ability->fireAt(f.source).has_value());const auto before=f.ability->equipment(1001).value();
+    const auto tick=f.combat->attributes().tick();const auto statsVersion=f.stats(f.source).version();
+    const auto rows=f.ability->debugRecords();CHECK_TRUE(!rows.empty());CHECK_TRUE(rows.size()<=512);
+    CHECK_TRUE(rows.back().actor.id==f.source.id);CHECK_TRUE(rows.back().details.find("Ammo")!=std::string::npos);
+    const auto after=f.ability->equipment(1001).value();CHECK_TRUE(before.ammunition==after.ammunition && before.nextFireTick==after.nextFireTick);
+    CHECK_TRUE(f.combat->attributes().tick()==tick && f.stats(f.source).version()==statsVersion);
+}
 TEST_SUITE_END

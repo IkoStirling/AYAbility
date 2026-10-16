@@ -136,3 +136,9 @@ has no retained history. Diagnostics are not checkpointed or serialized.
 Verification: audited full inventory 37/37 passed, including actual 2D/3D
 settlement debug markers. Report:
 `out/debug-visualization-20261015/ability-full/0c5fe02b87bc4c8d902acf3e22eb4022/cases.json`.
+
+## Debug content extension (2026-10-15)
+
+AbilitySystem::debugRecords copies up to512 equipment/ammo/reload/fire/skill cooldown and delivery-stage rows from existing runtime state. Stage observations include trigger/predecessor/due/end/progress and hit/open/emitted flags. This const diagnostic entry never hydrates authored grants, drains emissions, advances ticks or changes costs. The optional editor Combat/stages category consumes these owned values.
+
+Module-local regression sources were updated. Runtime tests and interactive editor acceptance are deferred by the current task request; previous validation reports cover the earlier baseline. These changes remain uncommitted until focused runtime checks are requested and pass.
