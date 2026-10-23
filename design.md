@@ -5,6 +5,22 @@ target permission, life and effects. Ability owns equipment ammunition/cadence,
 character skill levels/cooldowns and release timelines. A fixed Sim tick drives
 all three; gameplay entries use Entity handles and resolve the current owner.
 
+Equipment removal is explicit: `unequip` clears selection while keeping the
+owned instance; `removeEquipment` validates the owner, clears selection if
+necessary, and erases only that instance. Both reject calls from a resource
+precommit callback (`Busy`). A removed instance is absent from checkpoints;
+already released casts retain their snapshots and source-loss policy. A later
+`addEquipment` creates fresh ammo/reload/cadence state, so a game needing item
+state preservation can use `transferEquipment` within the same runtime. That
+operation checks source ownership and destination selection before mutation,
+changes the instance's owner, preserves its numeric state, clears source
+selection and optionally selects it at the destination. An occupied
+destination selection rejects `equipOnArrival` without moving the item.
+Inventory ownership and Ability ownership are distinct commit domains; the
+game transaction owner must roll back an external inventory transfer if the
+Ability operation rejects. Released casts retain their prior source snapshot
+and lifetime policy.
+
 `AbilityEquipmentComponent` and `AbilitySkillComponent` are repeatable Actor/Scene
 authoring slots. Equipment slots contain catalog configuration IDs and one
 optional equipped selection. Skill slots contain catalog skill IDs and levels.

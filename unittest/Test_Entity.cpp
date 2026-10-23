@@ -52,6 +52,24 @@ struct WorldFixture {
 };
 }
 TEST_SUITE(AbilityEntityTests)
+TEST_CASE(equipment_transfer_facade_keeps_instance_state_and_selection_consistent) {
+    WorldFixture f;
+    CHECK_TRUE(f.ability->addEquipment(f.source,1001,101).has_value());
+    CHECK_TRUE(f.ability->equip(f.source,1001).has_value());
+    const auto shot=f.ability->fireAt(f.source,f.target).value();
+    CHECK_TRUE(f.ability->addEquipment(f.target,1002,102).has_value());
+    CHECK_TRUE(f.ability->equip(f.target,1002).has_value());
+    CHECK_TRUE(f.ability->transferEquipment(f.source,f.target,1001,true)
+        .error().code==ayt::ability::Error::Busy);
+    CHECK_TRUE(f.ability->equipment(1001)->ammunition==shot.shot.ammunitionRemaining);
+    CHECK_TRUE(f.ability->unequip(f.target).has_value());
+    CHECK_TRUE(f.ability->transferEquipment(f.source,f.target,1001,true).has_value());
+    CHECK_TRUE(f.ability->equipment(1001)->ammunition==shot.shot.ammunitionRemaining);
+    CHECK_TRUE(f.ability->equip(f.source,1001).error().code==ayt::ability::Error::Missing);
+    CHECK_TRUE(f.ability->removeEquipment(f.target,1001).has_value());
+    CHECK_TRUE(f.ability->equipment(1001).error().code==ayt::ability::Error::Missing);
+    CHECK_TRUE(f.ability->equip(f.target,1002).has_value());
+}
 TEST_CASE(accepted_fire_releases_match_combo_without_manual_cross_system_events) {
     WorldFixture f;
     CHECK_TRUE(f.ability->configureCombos({{700,{{10,0},{10,4}}}}).has_value());

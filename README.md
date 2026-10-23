@@ -11,6 +11,21 @@ skill grants own levels and skill cooldowns. All time inputs are caller-supplied
 fixed Sim ticks. Author definitions are immutable after catalog compilation and
 each accepted fire returns an owned resolved snapshot.
 
+Inventory owners may call `AbilitySystem::unequip(actor)` before moving an item
+out of an equipment slot, then `removeEquipment(actor, instance)` when its
+ownership transfer commits. The headless `Runtime` exposes matching methods.
+Removal validates the current actor, clears selection when needed and preserves
+other equipment and skill grants; it does not retroactively cancel released
+casts. Removing and re-adding an instance starts fresh ammunition and cadence
+state. Persist or transfer those values explicitly if gameplay treats them as
+part of the item instance.
+`transferEquipment(from, to, instance, equipOnArrival)` changes ownership
+within one Ability runtime while preserving ammunition, reload and cadence.
+An occupied destination selection rejects `equipOnArrival` before mutation.
+Inventory and Ability are separate commit domains: validate both, commit the
+inventory transfer, then transfer Ability ownership; roll back the inventory
+transaction if Ability rejects before publishing the result.
+
 `Catalog::compile` validates typed numeric parameters, constant/table/curve
 progression, feature unlocks and references. `Runtime::fire` can call an optional
 pre-commit hook for one external atomic cost; failure leaves local ammunition,

@@ -5,6 +5,88 @@
 #include <stdexcept>
 
 TEST_SUITE(AbilityRuntimeTests)
+TEST_CASE(equipment_can_be_unequipped_and_removed_without_erasing_other_grants) {
+    auto runtime=fixture::runtime();
+    CHECK_TRUE(runtime.addEquipment(fixture::actor,fixture::pistol,101).has_value());
+    CHECK_TRUE(runtime.addEquipment(fixture::actor,fixture::automatic,102).has_value());
+    CHECK_TRUE(runtime.grant(fixture::actor,202,1).has_value());
+    CHECK_TRUE(runtime.equip(fixture::actor,fixture::pistol).has_value());
+    CHECK_TRUE(runtime.unequip(fixture::actor).has_value());
+    CHECK_TRUE(runtime.unequip(fixture::actor).has_value());
+    CHECK_FALSE(runtime.equipped(fixture::actor)->has_value());
+    CHECK_TRUE(runtime.equip(fixture::actor,fixture::automatic).has_value());
+    CHECK_TRUE(runtime.removeEquipment(fixture::actor,fixture::automatic).has_value());
+    CHECK_FALSE(runtime.equipped(fixture::actor)->has_value());
+    CHECK_TRUE(runtime.equipment(fixture::pistol).has_value());
+    CHECK_TRUE(runtime.skill(fixture::actor,202).has_value());
+    CHECK_TRUE(runtime.fire({fixture::actor,1}).error().code==Error::Missing);
+    CHECK_TRUE(runtime.equip(fixture::actor,fixture::pistol).has_value());
+    CHECK_TRUE(runtime.fire({fixture::actor,1}).has_value());
+    CHECK_TRUE(runtime.removeEquipment(fixture::actor,fixture::pistol).has_value());
+    CHECK_TRUE(runtime.equipment(fixture::pistol).error().code==Error::Missing);
+    CHECK_TRUE(runtime.removeEquipment(fixture::actor,fixture::pistol).error().code==Error::Missing);
+}
+TEST_CASE(equipment_revoke_validates_owner_and_rejects_reentrant_mutation) {
+    auto runtime=fixture::runtime();
+    const Identity other{1,11,1};
+    CHECK_TRUE(runtime.addEquipment(fixture::actor,fixture::pistol,101).has_value());
+    CHECK_TRUE(runtime.addEquipment(other,fixture::automatic,102).has_value());
+    CHECK_TRUE(runtime.removeEquipment(other,fixture::pistol).error().code==Error::Missing);
+    CHECK_TRUE(runtime.equipment(fixture::pistol).has_value());
+    CHECK_TRUE(runtime.unequip({1,999,1}).error().code==Error::Missing);
+    CHECK_TRUE(runtime.equip(fixture::actor,fixture::pistol).has_value());
+    auto fired=runtime.fire({fixture::actor,1},[&](const FireEvent&)->Result<void>{
+        CHECK_TRUE(runtime.unequip(fixture::actor).error().code==Error::Busy);
+        CHECK_TRUE(runtime.removeEquipment(fixture::actor,fixture::pistol).error().code==Error::Busy);
+        return {};
+    });
+    CHECK_TRUE(fired.has_value());
+    CHECK_TRUE(runtime.equipment(fixture::pistol).has_value());
+    CHECK_TRUE(runtime.equipped(fixture::actor)->has_value());
+}
+TEST_CASE(equipment_transfer_preserves_magazine_cadence_and_rejects_conflicts_atomically) {
+    auto runtime=fixture::runtime();
+    const Identity other{1,11,1};
+    CHECK_TRUE(runtime.addEquipment(fixture::actor,fixture::pistol,101).has_value());
+    CHECK_TRUE(runtime.equip(fixture::actor,fixture::pistol).has_value());
+    const auto shot=runtime.fire({fixture::actor,1}).value();
+    CHECK_TRUE(runtime.addEquipment(other,fixture::automatic,102).has_value());
+    CHECK_TRUE(runtime.equip(other,fixture::automatic).has_value());
+    CHECK_TRUE(runtime.transferEquipment(fixture::actor,other,fixture::pistol,true)
+        .error().code==Error::Busy);
+    CHECK_TRUE(runtime.equipment(fixture::pistol)->owner==fixture::actor);
+    CHECK_TRUE(runtime.equipped(fixture::actor)->value()==fixture::pistol);
+    CHECK_TRUE(runtime.transferEquipment({1,999,1},other,fixture::pistol)
+        .error().code==Error::Missing);
+    CHECK_TRUE(runtime.equipment(fixture::pistol)->owner==fixture::actor);
+    CHECK_TRUE(runtime.unequip(other).has_value());
+    CHECK_TRUE(runtime.transferEquipment(fixture::actor,other,fixture::pistol,true).has_value());
+    CHECK_FALSE(runtime.equipped(fixture::actor)->has_value());
+    CHECK_TRUE(runtime.equipped(other)->value()==fixture::pistol);
+    const auto transferred=runtime.equipment(fixture::pistol).value();
+    CHECK_TRUE(transferred.owner==other);
+    CHECK_TRUE(transferred.ammunition==shot.ammunitionRemaining);
+    CHECK_TRUE(transferred.nextFireTick==shot.nextFireTick);
+    CHECK_TRUE(runtime.fire({fixture::actor,5}).error().code==Error::Missing);
+    CHECK_TRUE(runtime.fire({other,2}).error().code==Error::Cooldown);
+    CHECK_TRUE(runtime.fire({other,5}).has_value());
+}
+TEST_CASE(equipment_transfer_keeps_in_progress_reload) {
+    auto runtime=fixture::runtime();
+    const Identity other{1,11,1};
+    CHECK_TRUE(runtime.addEquipment(fixture::actor,fixture::pistol,101).has_value());
+    CHECK_TRUE(runtime.equip(fixture::actor,fixture::pistol).has_value());
+    CHECK_TRUE(runtime.fire({fixture::actor,1}).has_value());
+    CHECK_TRUE(runtime.beginReload(fixture::actor,2).has_value());
+    const auto before=runtime.equipment(fixture::pistol).value();
+    CHECK_TRUE(runtime.transferEquipment(fixture::actor,other,fixture::pistol,true).has_value());
+    const auto after=runtime.equipment(fixture::pistol).value();
+    CHECK_TRUE(after.owner==other);
+    CHECK_TRUE(after.ammunition==before.ammunition);
+    CHECK_TRUE(after.reloading && after.reloadUntil==before.reloadUntil);
+    CHECK_TRUE(runtime.fire({other,4}).error().code==Error::Busy);
+    CHECK_TRUE(runtime.fire({other,5}).has_value());
+}
 TEST_CASE(checkpoint_restores_ammo_cadence_skill_cooldown_and_rejects_invalid_state_atomically) {
     auto runtime=fixture::runtime();
     CHECK_TRUE(runtime.addEquipment(fixture::actor,fixture::pistol,101).has_value());

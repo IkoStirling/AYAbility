@@ -62,6 +62,18 @@ public:
     explicit Runtime(std::shared_ptr<const Catalog> catalog) : _catalog(std::move(catalog)) {}
     Result<void> addEquipment(Identity actor, Identity equipment, Id configuration);
     Result<void> equip(Identity actor, Identity equipment);
+    /// Clear the selected equipment without deleting its owned runtime state.
+    /// An already empty selection succeeds. Caller owns inventory transfer order.
+    Result<void> unequip(Identity actor);
+    /// Remove one owned equipment instance, also clearing selection if it is
+    /// equipped. Rejects another actor's instance and preserves other grants.
+    /// Released casts keep their existing snapshot/lifetime policy.
+    Result<void> removeEquipment(Identity actor, Identity equipment);
+    /// Atomically change one instance's owner within this Runtime, preserving
+    /// ammunition, reload and cadence. If equipOnArrival is true, an occupied
+    /// destination selection rejects without changing either actor.
+    Result<void> transferEquipment(Identity from, Identity to, Identity equipment,
+        bool equipOnArrival = false);
     Result<void> grant(Identity actor, Id skill, std::uint32_t level);
     Result<void> setLevel(Identity actor, Id skill, std::uint32_t level);
     Result<void> beginReload(Identity actor, std::uint64_t tick);

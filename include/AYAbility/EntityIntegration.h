@@ -82,6 +82,15 @@ public:
         std::shared_ptr<const Catalog> catalog);
     Result<void> addEquipment(ayt::entity::EntityHandle actor,Id equipmentInstance,Id configuration);
     Result<void> equip(ayt::entity::EntityHandle actor,Id equipmentInstance);
+    /// Unselect the currently equipped instance before an inventory transfer.
+    Result<void> unequip(ayt::entity::EntityHandle actor);
+    /// Remove one owned equipment instance after its inventory transfer commits.
+    /// Active release snapshots keep their authored source-loss policy.
+    Result<void> removeEquipment(ayt::entity::EntityHandle actor,Id equipmentInstance);
+    /// Transfer one instance to another actor in this World. The Ability
+    /// transaction does not include an external inventory mutation.
+    Result<void> transferEquipment(ayt::entity::EntityHandle from,
+        ayt::entity::EntityHandle to,Id equipmentInstance,bool equipOnArrival=false);
     Result<void> grant(ayt::entity::EntityHandle actor,Id skill,std::uint32_t level);
     Result<void> setLevel(ayt::entity::EntityHandle actor,Id skill,std::uint32_t level);
     /// Install independent fixed-tick combo content. Accepted releases record tokens automatically.

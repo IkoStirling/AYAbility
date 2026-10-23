@@ -56,6 +56,47 @@ Result<void> Runtime::equip(Identity actor,Identity equipment) {
     owner->second.equipped=equipment;
     return {};
 }
+Result<void> Runtime::unequip(Identity actor) {
+    if(_committing)return fail<void>(Error::Busy,"runtime commit in progress");
+    auto owner=_actors.find(actor);
+    if(owner==_actors.end())return fail<void>(Error::Missing,"actor missing");
+    owner->second.equipped={};
+    return {};
+}
+Result<void> Runtime::removeEquipment(Identity actor,Identity equipment) {
+    if(_committing)return fail<void>(Error::Busy,"runtime commit in progress");
+    auto owner=_actors.find(actor);
+    auto item=_equipment.find(equipment);
+    if(owner==_actors.end() || item==_equipment.end() || item->second.owner!=actor)
+        return fail<void>(Error::Missing,"actor equipment missing");
+    if(owner->second.equipped==equipment)owner->second.equipped={};
+    _equipment.erase(item);
+    return {};
+}
+Result<void> Runtime::transferEquipment(Identity from,Identity to,Identity equipment,
+                                       bool equipOnArrival) {
+    if(_committing)return fail<void>(Error::Busy,"runtime commit in progress");
+    if(!from.valid() || !to.valid() || !equipment.valid() || from==to ||
+       from.domain!=to.domain || from.domain!=equipment.domain)
+        return fail<void>(Error::Invalid,"invalid equipment transfer identity");
+    auto source=_actors.find(from);
+    auto item=_equipment.find(equipment);
+    if(source==_actors.end() || item==_equipment.end() || item->second.owner!=from)
+        return fail<void>(Error::Missing,"source equipment missing");
+    auto destination=_actors.find(to);
+    if(equipOnArrival && destination!=_actors.end() &&
+       destination->second.equipped.valid() &&
+       destination->second.equipped!=equipment)
+        return fail<void>(Error::Busy,"destination equipment slot occupied");
+    // All rejection checks precede mutation. try_emplace is the sole possible
+    // allocation and either succeeds or leaves the maps unchanged.
+    auto [dest,inserted]=_actors.try_emplace(to);
+    (void)inserted;
+    if(source->second.equipped==equipment)source->second.equipped={};
+    item->second.owner=to;
+    if(equipOnArrival)dest->second.equipped=equipment;
+    return {};
+}
 Result<void> Runtime::grant(Identity actor,Id skillId,std::uint32_t level) {
     if(_committing)return fail<void>(Error::Busy,"runtime commit in progress");
     if(!actor.valid() || !_catalog)return fail<void>(Error::Invalid,"invalid actor or catalog");

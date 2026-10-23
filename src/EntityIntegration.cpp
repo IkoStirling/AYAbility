@@ -167,6 +167,21 @@ Result<void> AbilitySystem::equip(ayt::entity::EntityHandle actor,Id equipmentIn
     auto key=actorIdentity(actor);if(!key)return std::unexpected(key.error());
     return _runtime->equip(*key,equipmentIdentity(equipmentInstance));
 }
+Result<void> AbilitySystem::unequip(ayt::entity::EntityHandle actor) {
+    auto key=actorIdentity(actor);if(!key)return std::unexpected(key.error());
+    return _runtime->unequip(*key);
+}
+Result<void> AbilitySystem::removeEquipment(ayt::entity::EntityHandle actor,Id equipmentInstance) {
+    auto key=actorIdentity(actor);if(!key)return std::unexpected(key.error());
+    return _runtime->removeEquipment(*key,equipmentIdentity(equipmentInstance));
+}
+Result<void> AbilitySystem::transferEquipment(ayt::entity::EntityHandle from,
+        ayt::entity::EntityHandle to,Id equipmentInstance,bool equipOnArrival) {
+    auto source=actorIdentity(from);if(!source)return std::unexpected(source.error());
+    auto destination=actorIdentity(to);if(!destination)return std::unexpected(destination.error());
+    return _runtime->transferEquipment(*source,*destination,
+        equipmentIdentity(equipmentInstance),equipOnArrival);
+}
 Result<void> AbilitySystem::grant(ayt::entity::EntityHandle actor,Id skillId,std::uint32_t level) {
     if(!_world || !_runtime)return fail<void>(Error::Stale,"Ability World unavailable");
     if(auto ready=actorIdentity(actor);!ready)return std::unexpected(ready.error());
