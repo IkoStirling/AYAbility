@@ -26,6 +26,17 @@ Inventory and Ability are separate commit domains: validate both, commit the
 inventory transfer, then transfer Ability ownership; roll back the inventory
 transaction if Ability rejects before publishing the result.
 
+The optional `AYAbility_Action3DExample` demonstrates one headless fixed-step
+attack and dodge: Ability accepts input and charges a resource, Animation
+extracts root translation and a hand attachment, Physics sweeps the capsule
+and hand contact, Combat settles a hit, and a cancel stops the dodge before
+the following step. `FixedActionTimeline` supplies reusable data-defined
+windup/active/recovery lengths, ordered tick markers, a one-slot final-window
+input buffer, cancellation and snapshot restore. It accepts an already charged
+Ability execution; buffered input is only intent and is charged when the host
+starts its next action. The host still owns Entity mapping, animation, movement
+and hit settlement. Each `step(tick)` advances exactly one fixed tick.
+
 `Catalog::compile` validates typed numeric parameters, constant/table/curve
 progression, feature unlocks and references. `Runtime::fire` can call an optional
 pre-commit hook for one external atomic cost; failure leaves local ammunition,

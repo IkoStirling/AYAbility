@@ -5,7 +5,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 
-add_library(AYAbilityCore STATIC src/Ability.cpp src/Runtime.cpp src/Derived.cpp src/Combo.cpp)
+add_library(AYAbilityCore STATIC src/Ability.cpp src/Runtime.cpp src/Derived.cpp src/Combo.cpp
+    src/FixedActionTimeline.cpp)
 add_library(AYAbility::Core ALIAS AYAbilityCore)
 target_compile_features(AYAbilityCore PUBLIC cxx_std_23)
 target_include_directories(AYAbilityCore PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
@@ -102,6 +103,16 @@ function(ay_ability_add_physics3d_integration)
         add_executable(AYAbility_Physics3DTests "${AY_ABILITY_SOURCE_DIR}/unittest/main.cpp"
             "${AY_ABILITY_SOURCE_DIR}/unittest/Test_Physics3D.cpp")
         target_link_libraries(AYAbility_Physics3DTests PRIVATE AYAbilityPhysics3D AYTest)
+        if(TARGET AYAnimation AND TARGET AYCombatStatsIntegration)
+            target_sources(AYAbility_Physics3DTests PRIVATE
+                "${AY_ABILITY_SOURCE_DIR}/unittest/Test_Action3D.cpp")
+            target_link_libraries(AYAbility_Physics3DTests PRIVATE
+                AYAnimation AYCombatStatsIntegration)
+            add_executable(AYAbility_Action3DExample
+                "${AY_ABILITY_SOURCE_DIR}/examples/Action3D.cpp")
+            target_link_libraries(AYAbility_Action3DExample PRIVATE
+                AYAbilityCore AYAnimation AYPhysics AYCombatStatsIntegration)
+        endif()
         if(MSVC)
             target_compile_options(AYAbility_Physics3DTests PRIVATE /utf-8 /Zc:preprocessor /Zc:__cplusplus)
         endif()
@@ -114,7 +125,7 @@ if(BUILD_TESTING)
         add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../AYFoundation/AYTest ${CMAKE_CURRENT_BINARY_DIR}/foundation/test)
         add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../AYFoundation/AYPlatform ${CMAKE_CURRENT_BINARY_DIR}/foundation/platform)
     endif()
-    add_executable(AYAbility_UnitTests unittest/main.cpp unittest/Test_Ability.cpp unittest/Test_Runtime.cpp unittest/Test_Authoring.cpp unittest/Test_Combo.cpp)
+    add_executable(AYAbility_UnitTests unittest/main.cpp unittest/Test_Ability.cpp unittest/Test_Runtime.cpp unittest/Test_Authoring.cpp unittest/Test_Combo.cpp unittest/Test_FixedActionTimeline.cpp)
     target_link_libraries(AYAbility_UnitTests PRIVATE AYAbilityAuthoring AYTest)
     if(MSVC)
         target_compile_options(AYAbility_UnitTests PRIVATE /utf-8 /Zc:__cplusplus)
