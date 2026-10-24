@@ -27,6 +27,7 @@ struct Result {
     int manaAfterAttack = 0;
     int manaAfterDodge = 0;
     int healthAfterHit = 0;
+    int secondHealthAfterHit = 0;
     float positionAfterAttack = 0;
     float positionAfterInterrupt = 0;
     bool swingNotify = false;
@@ -89,7 +90,7 @@ inline Result run(bool targetDisappearsBeforeHit = false,
     using namespace ayt::stats;
     constexpr float dt = 1.0f/60.0f;
     const Identity actor{1,10,1};
-    const CombatantRef attacker{1,10,1}, target{1,20,1};
+    const CombatantRef attacker{1,10,1}, target{1,20,1}, secondTarget{1,21,1};
 
     ActionDefinition slash{.id=30,.behaviorId=derived::Behavior,
         .defaults={{derived::CooldownTicks,Unit::Ticks,1},{2,Unit::Amount,30}}};
@@ -161,6 +162,13 @@ inline Result run(bool targetDisappearsBeforeHit = false,
     shape.halfExtents={0.2f,0.5f,0.5f};
     ColliderHandle targetCollider;
     accepted(world->createCollider(shape,targetCollider));
+    body.position={1.75f,0.9f,0.8f};
+    BodyHandle secondBody;
+    accepted(world->createRigidbody(body,secondBody));
+    shape.body=secondBody;
+    shape.halfExtents={0.2f,0.5f,0.2f};
+    ColliderHandle secondCollider;
+    accepted(world->createCollider(shape,secondCollider));
     CharacterController3DDesc characterDesc;
     characterDesc.layer=2;
     characterDesc.collideMask=1u<<0; // target hurtbox does not block actor movement
@@ -212,9 +220,12 @@ inline Result run(bool targetDisappearsBeforeHit = false,
     bool swing=false;
     for (const auto& marker:notifies)
         if (marker.name && std::string(marker.name)=="Swing") swing=true;
-    const auto handLocal=animation.getBoneWorldMatrices()[1].transformPoint({0,0,0});
+    const auto actorWorld=ayt::math::Float4x4::translation(actorState.position);
+    ayt::math::Float4x4 handWorld;
+    require(animation.socketWorldTransform(1,actorWorld,
+        ayt::math::Float4x4::identity(),handWorld),"hand socket unavailable");
     SphereSweep sweep;
-    sweep.origin=actorState.position+handLocal;
+    sweep.origin=handWorld.transformPoint({0,0,0});
     sweep.displacement={1.0f,0,0};
     sweep.radius=0.1f;
     sweep.layerMask=1u<<1;
@@ -222,12 +233,24 @@ inline Result run(bool targetDisappearsBeforeHit = false,
     accepted(world->sphereSweepSync(sweep,contact));
     require(contact.hit && contact.body==targetBody && contact.collider==targetCollider,
         "hand hit did not resolve exact collider");
+    ayt::math::Float4x4 secondHandWorld;
+    require(animation.socketWorldTransform(1,actorWorld,
+        ayt::math::Float4x4::translation({0,0,0.8f}),secondHandWorld),
+        "second hand socket unavailable");
+    sweep.origin=secondHandWorld.transformPoint({0,0,0});
+    RaycastHit secondContact;
+    accepted(world->sphereSweepSync(sweep,secondContact));
+    require(secondContact.hit && secondContact.body==secondBody
+        && secondContact.collider==secondCollider,
+        "second hand query did not resolve exact collider");
 
     auto schema = ayt::stats::Schema::compile({ayt::stats::Definition{
         .name="health",.shape=ayt::stats::Shape::Pool,.current=100,.capacity=100}});
     require(schema.has_value(),"health schema");
     auto health=ayt::stats::StatSet::create(*schema);
     require(health.has_value(),"health state");
+    auto secondHealth=ayt::stats::StatSet::create(*schema);
+    require(secondHealth.has_value(),"second health state");
     auto formula=ayt::stats::CalculationPlan::compile({
         {.id=1,.op=ayt::stats::Op::Input,.binding=0}},1,1);
     require(formula.has_value(),"damage formula");
@@ -255,12 +278,24 @@ inline Result run(bool targetDisappearsBeforeHit = false,
         require(settled->state==OutcomeState::Applied,
             "combat settlement rejected target");
         require(!settle(request,relations,ledger,*health,*formula,amount),"duplicate hit applied");
+        request.hit={attackRef,2,secondTarget,2};
+        request.target={secondTarget,2,mask(Capability::Damageable)};
+        request.expectedVersion=secondHealth->version();
+        request.calculation.hit=2;
+        auto secondSettled=settle(request,relations,ledger,*secondHealth,*formula,amount);
+        require(secondSettled && secondSettled->state==OutcomeState::Applied,
+            "second target was not settled");
+        require(!settle(request,relations,ledger,*secondHealth,*formula,amount),
+            "second duplicate hit applied");
     }
     // A body may still be in the physics snapshot after its gameplay target
     // disappears. The host refuses to map it to a live CombatantView.
     auto current=health->read(statId("health"));
     require(current.has_value(),"health read");
     output.healthAfterHit=static_cast<int>(current->current);
+    const auto secondCurrent=secondHealth->read(statId("health"));
+    require(secondCurrent.has_value(),"second health read");
+    output.secondHealthAfterHit=static_cast<int>(secondCurrent->current);
     output.boundaryRejected=!ledger.reserve({attackRef,2,target,3}).has_value();
     require(ledger.close(attackRef).has_value(),"hit window close");
 
