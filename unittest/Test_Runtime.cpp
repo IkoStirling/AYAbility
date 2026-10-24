@@ -5,6 +5,20 @@
 #include <stdexcept>
 
 TEST_SUITE(AbilityRuntimeTests)
+TEST_CASE(quiescent_state_swap_publishes_candidate_and_rejects_reentrant_swap) {
+    auto live=fixture::runtime(), candidate=fixture::runtime();
+    CHECK_TRUE(candidate.addEquipment(fixture::actor,fixture::pistol,101).has_value());
+    CHECK_TRUE(candidate.equip(fixture::actor,fixture::pistol).has_value());
+    CHECK_TRUE(live.swapState(candidate));
+    CHECK_TRUE(live.equipment(fixture::pistol).has_value());
+    CHECK_TRUE(candidate.equipment(fixture::pistol).error().code==Error::Missing);
+    auto fired=live.fire({fixture::actor,1},[&](const FireEvent&)->Result<void>{
+        CHECK_FALSE(live.swapState(candidate));
+        CHECK_TRUE(live.equipment(fixture::pistol).has_value());
+        return {};
+    });
+    CHECK_TRUE(fired.has_value());
+}
 TEST_CASE(equipment_can_be_unequipped_and_removed_without_erasing_other_grants) {
     auto runtime=fixture::runtime();
     CHECK_TRUE(runtime.addEquipment(fixture::actor,fixture::pistol,101).has_value());

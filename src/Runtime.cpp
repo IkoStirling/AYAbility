@@ -1,7 +1,18 @@
 #include <AYAbility/Runtime.h>
 #include <limits>
+#include <utility>
 
 namespace ayt::ability {
+
+bool Runtime::swapState(Runtime& other) noexcept {
+    if (_committing || other._committing) return false;
+    _catalog.swap(other._catalog);
+    _actors.swap(other._actors);
+    _equipment.swap(other._equipment);
+    using std::swap;
+    swap(_nextExecution, other._nextExecution);
+    return true;
+}
 namespace {
 template<class T> Result<T> fail(Error code,std::string message) {
     return std::unexpected(Diagnostic{code,std::move(message),{}});

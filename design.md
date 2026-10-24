@@ -68,6 +68,13 @@ Actor defaults and Scene data do not include active cooldowns, ammunition,
 release timelines, live Combat effects or Stats current-state checkpoints.
 Runtime save/restore needs a separate coordinated checkpoint contract.
 
+The optional Inventory effects adapter copies the headless Runtime, validates
+equipment changes there, then calls `swapState` to publish at a quiescent Sim
+boundary. The swap exchanges catalog, actor/equipment state and execution
+sequence without allocation; an active fire pre-commit callback refuses it.
+This gives the adapter a no-throw final publication step alongside Stats' own
+no-throw state swap. Game code still owns inventory transaction ordering.
+
 The Core `RuntimeCheckpoint` is that Ability-owned portion: a versioned owned
 snapshot of actors, selected equipment, ammunition, reload/cadence, skill levels,
 cooldowns and next execution ID. Restore builds and validates a replacement

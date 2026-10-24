@@ -25,6 +25,11 @@ An occupied destination selection rejects `equipOnArrival` before mutation.
 Inventory and Ability are separate commit domains: validate both, commit the
 inventory transfer, then transfer Ability ownership; roll back the inventory
 transaction if Ability rejects before publishing the result.
+For the optional AYInventory equipment projection, `Runtime::swapState` publishes
+a fully checked candidate without allocation at a quiescent Sim boundary. It
+returns false during a fire pre-commit hook and does not mutate either runtime.
+The projection can preserve an item's ammo while stowed and transfer it with
+its stable Ability binding when another actor equips it.
 
 The optional `AYAbility_Action3DExample` demonstrates one headless fixed-step
 attack and dodge: Ability accepts input and charges a resource, Animation

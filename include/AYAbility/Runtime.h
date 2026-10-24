@@ -90,6 +90,10 @@ public:
     Result<RuntimeCheckpoint> checkpoint() const;
     /// Validate the complete snapshot against this catalog before replacing live state.
     Result<void> restoreCheckpoint(const RuntimeCheckpoint& checkpoint);
+    /// Exchange complete runtime state without allocation at a quiescent Sim
+    /// boundary. Returns false without mutation during a fire pre-commit hook.
+    /// Useful for publishing a fully validated cross-module candidate.
+    bool swapState(Runtime& other) noexcept;
 private:
     struct ActorState {
         Identity equipped;
