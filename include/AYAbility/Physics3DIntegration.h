@@ -46,7 +46,7 @@ Result<Ability3DDeliverySystem*> installAbility3D(ayt::entity::World& world,
 Result<Ability3DDeliverySystem*> installAbility3D(ayt::entity::World& world,
     ayt::physics::PhysicsManager& physics,const AuthoringDocument& document,
     const OwnedEffectBindings& effects={});
-/// Bind an active area skill to a source-following 3D sphere candidate query.
+/// Bind an active area skill to a source-following 3D sphere or oriented-box query.
 /// Selection remains a pure game-supplied fact; Combat owns membership and effects.
 Result<void> configureAreaSkill3D(AbilitySystem& ability, ayt::entity::World& world,
     ayt::physics::PhysicsManager& physics, Id skill,

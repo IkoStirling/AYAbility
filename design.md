@@ -111,7 +111,7 @@ integration test hits two different shapes on one body and checks parts 7/8,
 then removes the first mapping and checks part zero and resulting health.
 
 Code-defined 3D active Area skills may register `configureAreaSkill3D` at
-composition time. The Jolt sphere query is sampled by Combat at fixed Sim;
+composition time. The Jolt sphere or oriented-box query is sampled by Combat at fixed Sim;
 Ability only owns cast cost, cooldown and area start/stop. Invalid geometry or
 missing required selection rejects before changing the binding. The optional
 Physics3D target links CombatPhysics3D, while the headless Ability target does

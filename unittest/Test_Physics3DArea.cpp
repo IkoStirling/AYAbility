@@ -102,6 +102,29 @@ TEST_CASE(jolt_area_candidates_follow_source_and_combat_membership) {
     CHECK_TRUE(combat->hasTag(target, 77).value());
     CHECK_TRUE(ability->stopArea(cast.area)->ended);
     CHECK_FALSE(combat->hasTag(target, 77).value());
+    query.shape = ayt::combat::AreaShape3D::Box;
+    query.radius = 0;
+    query.halfExtents = {2.0f, 0.25f, 0.25f};
+    CHECK_TRUE(configureAreaSkill3D(*ability, world, *manager, 303, area, query,
+        [target](auto candidate){ return candidate == target; }).has_value());
+    CHECK_TRUE(manager->world3D()->setRigidbodyTransform(targetBody, {4.5f,0,0}, {}) ==
+        ayt::physics::PhysResult::Ok);
+    CHECK_TRUE(manager->stepAndWait(1.0f/60) == ayt::physics::PhysResult::Ok);
+    auto boxCast = ability->castArea(source, 303).value();
+    world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(combat->hasTag(target, 77).value());
+    sourceTransform->setRotation(0, 0.7071068f, 0, 0.7071068f);
+    world.fixedUpdate(1.0f/60);
+    CHECK_FALSE(combat->hasTag(target, 77).value());
+    CHECK_TRUE(manager->world3D()->setRigidbodyTransform(targetBody, {3,0,1.5f}, {}) ==
+        ayt::physics::PhysResult::Ok);
+    CHECK_TRUE(manager->stepAndWait(1.0f/60) == ayt::physics::PhysResult::Ok);
+    world.fixedUpdate(1.0f/60);
+    CHECK_TRUE(combat->hasTag(target, 77).value());
+    CHECK_TRUE(ability->stopArea(boxCast.area)->ended);
+    query.halfExtents.y = 0;
+    CHECK_FALSE(ayt::combat::validateAreaQuery3D(query).has_value());
+    query.halfExtents.y = 0.25f;
     auto provider = ayt::combat::makeAreaCandidateProvider3D(world, *manager,
         source, query).value();
     auto* duplicate = world.createEntity();

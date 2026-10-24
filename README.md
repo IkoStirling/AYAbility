@@ -166,7 +166,7 @@ contacts and body-only overlap stages use part zero. Rebind after collider/world
 replacement; `bind` clears mappings. Keep PhysicsManager alive through World shutdown.
 
 `configureAreaSkill3D` connects a code-defined active Area skill to the
-source-following Jolt sphere provider. It validates query geometry and a
+source-following Jolt sphere or oriented-box provider. It validates query geometry and a
 required selection predicate before replacing the skill binding. Gameplay
 continues to call `castArea`; Combat owns current membership and effects.
 The provider is not yet serialized in the version-1 authoring document.
