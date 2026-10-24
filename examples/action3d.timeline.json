@@ -18,6 +18,9 @@
       "markers": [
         {"offset": 1, "id": 1},
         {"offset": 1, "id": 2}
+      ],
+      "cancelWindows": [
+        {"startOffset": 2, "endOffset": 3, "nextActions": [20]}
       ]
     }
   ]

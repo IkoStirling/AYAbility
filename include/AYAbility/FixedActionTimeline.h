@@ -15,12 +15,19 @@ enum class FixedActionCueKind : std::uint8_t {
 /// cannot repeat one marker ID at the same offset. Meaning belongs to authored
 /// content and the host; the timeline never invokes gameplay code.
 struct FixedActionMarker { std::uint32_t offset=0; Id id=0; };
+/// [startOffset,endOffset) accepts only the listed next action IDs. The host
+/// prechecks this window before charging the next action's external cost.
+struct FixedActionCancelWindow {
+    std::uint32_t startOffset=0, endOffset=0;
+    std::vector<Id> nextActions;
+};
 struct FixedActionDefinition {
     Id id=0;
     std::uint32_t windupTicks=0, activeTicks=1, recoveryTicks=0;
     /// Final ticks of this action in which one next-action input may be stored.
     std::uint32_t inputBufferTicks=0;
     std::vector<FixedActionMarker> markers;
+    std::vector<FixedActionCancelWindow> cancelWindows;
 };
 struct FixedActionCue {
     FixedActionCueKind kind=FixedActionCueKind::Marker;
@@ -63,6 +70,15 @@ public:
     /// Store one next-action intent during the current action's final window.
     /// Input buffering does not precommit an Ability execution or its cost.
     Result<void> buffer(Id nextAction, std::uint64_t tick);
+    /// Prevalidate one authored voluntary transition before external Ability
+    /// cost is charged. The single-owner host must not mutate this timeline
+    /// between precheck and transition.
+    Result<void> canCancelInto(Id nextAction, std::uint64_t tick) const;
+    /// Atomically replace the running action on its next unprocessed tick.
+    /// Returns a cancellation cue for the old action; step(tick) then emits
+    /// the new action's first frame. Invalid transitions leave state intact.
+    Result<FixedActionCue> transition(Id nextAction, std::uint64_t execution,
+                                      std::uint64_t tick);
     /// Advance exactly one fixed tick; skipped or repeated ticks are rejected.
     Result<FixedActionFrame> step(std::uint64_t tick);
     /// Stop before the next step. The returned cue lets the host stop animation

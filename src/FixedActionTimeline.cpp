@@ -30,6 +30,7 @@ void hash(std::uint64_t& fingerprint, std::uint64_t value) {
 Result<FixedActionTimeline> FixedActionTimeline::compile(
     std::vector<FixedActionDefinition> definitions) {
     FixedActionTimeline timeline;
+    std::size_t totalWindows=0;
     for (auto& definition:definitions) {
         const auto total=duration(definition);
         if (!definition.id || !definition.activeTicks || !total || total>MaxDuration ||
@@ -45,12 +46,42 @@ Result<FixedActionTimeline> FixedActionTimeline::compile(
         }
         std::stable_sort(definition.markers.begin(),definition.markers.end(),
             [](const auto& a,const auto& b){return a.offset<b.offset;});
+        totalWindows+=definition.cancelWindows.size();
+        if (totalWindows>4096)
+            return fail<FixedActionTimeline>(Error::Invalid,"fixed action cancel window budget exceeded");
+        for (auto& window:definition.cancelWindows) {
+            if (window.startOffset>=window.endOffset || window.endOffset>total ||
+                window.nextActions.empty() || window.nextActions.size()>128)
+                return fail<FixedActionTimeline>(Error::Invalid,"invalid fixed action cancel window");
+            std::sort(window.nextActions.begin(),window.nextActions.end());
+            if (window.nextActions.front()==0 ||
+                std::adjacent_find(window.nextActions.begin(),window.nextActions.end())
+                    !=window.nextActions.end())
+                return fail<FixedActionTimeline>(Error::Duplicate,
+                    "duplicate or zero fixed action cancel target");
+        }
+        std::sort(definition.cancelWindows.begin(),definition.cancelWindows.end(),
+            [](const auto& a,const auto& b) {
+                return a.startOffset!=b.startOffset ? a.startOffset<b.startOffset
+                    : a.endOffset<b.endOffset;
+            });
+        for (std::size_t i=1;i<definition.cancelWindows.size();++i)
+            if (definition.cancelWindows[i-1].startOffset==definition.cancelWindows[i].startOffset
+                && definition.cancelWindows[i-1].endOffset==definition.cancelWindows[i].endOffset)
+                return fail<FixedActionTimeline>(Error::Duplicate,
+                    "duplicate fixed action cancel window");
         const Id id=definition.id;
         if (!timeline._definitions.emplace(id,std::move(definition)).second)
             return fail<FixedActionTimeline>(Error::Duplicate,"duplicate fixed action id");
     }
     if (timeline._definitions.empty())
         return fail<FixedActionTimeline>(Error::Invalid,"fixed action definitions empty");
+    for (const auto& [id,definition]:timeline._definitions)
+        for (const auto& window:definition.cancelWindows)
+            for (const auto target:window.nextActions)
+                if (!timeline._definitions.contains(target))
+                    return fail<FixedActionTimeline>(Error::Missing,
+                        "fixed action cancel target missing");
     std::uint64_t fingerprint=14695981039346656037ull;
     for (const auto& [id,definition]:timeline._definitions) {
         hash(fingerprint,id);
@@ -62,6 +93,17 @@ Result<FixedActionTimeline> FixedActionTimeline::compile(
         for (const auto& marker:definition.markers) {
             hash(fingerprint,marker.offset);
             hash(fingerprint,marker.id);
+        }
+        // Preserve historical fingerprints for definitions without windows.
+        if (!definition.cancelWindows.empty()) {
+            hash(fingerprint,0x43414e43454c574eull);
+            hash(fingerprint,definition.cancelWindows.size());
+            for (const auto& window:definition.cancelWindows) {
+                hash(fingerprint,window.startOffset);
+                hash(fingerprint,window.endOffset);
+                hash(fingerprint,window.nextActions.size());
+                for (const auto target:window.nextActions) hash(fingerprint,target);
+            }
         }
     }
     timeline._fingerprint=fingerprint;
@@ -103,6 +145,43 @@ Result<void> FixedActionTimeline::buffer(Id nextAction,std::uint64_t tick) {
     _bufferedAction=nextAction;
     _bufferedTick=tick;
     return {};
+}
+
+Result<void> FixedActionTimeline::canCancelInto(Id nextAction,
+                                               std::uint64_t tick) const {
+    if (!_action) return fail<void>(Error::Missing,"fixed action not running");
+    const auto target=_definitions.find(nextAction);
+    if (target==_definitions.end())
+        return fail<void>(Error::Missing,"fixed action cancel target missing");
+    if (_lastTick==std::numeric_limits<std::uint64_t>::max() ||
+        tick!=_lastTick+1 || tick<_startTick ||
+        tick>std::numeric_limits<std::uint64_t>::max()-duration(target->second))
+        return fail<void>(Error::Stale,"fixed action cancel tick out of order");
+    const auto& current=_definitions.at(_action);
+    const auto offset=tick-_startTick;
+    if (offset>=duration(current))
+        return fail<void>(Error::Busy,"fixed action already finished");
+    for (const auto& window:current.cancelWindows)
+        if (offset>=window.startOffset && offset<window.endOffset &&
+            std::binary_search(window.nextActions.begin(),window.nextActions.end(),nextAction))
+            return {};
+    return fail<void>(Error::Busy,"outside authored fixed action cancel window");
+}
+
+Result<FixedActionCue> FixedActionTimeline::transition(
+    Id nextAction,std::uint64_t execution,std::uint64_t tick) {
+    if (auto ready=canCancelInto(nextAction,tick);!ready)
+        return std::unexpected(ready.error());
+    if (!execution) return fail<FixedActionCue>(Error::Invalid,
+        "invalid fixed action execution");
+    FixedActionCue cue{FixedActionCueKind::Cancelled,_lastPhase,_action,0,_execution,tick};
+    _action=nextAction;
+    _execution=execution;
+    _startTick=tick;
+    _bufferedAction=0;
+    _bufferedTick=0;
+    _lastPhase=FixedActionPhase::Idle;
+    return cue;
 }
 
 Result<FixedActionFrame> FixedActionTimeline::step(std::uint64_t tick) {

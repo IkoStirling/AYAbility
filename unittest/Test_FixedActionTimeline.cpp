@@ -24,7 +24,8 @@ TEST_CASE(authored_document_roundtrips_and_compiles_to_stable_timeline) {
     FixedActionDocument authored;
     authored.actions = {{.id=30,.windupTicks=1,.activeTicks=2,
         .recoveryTicks=1,.inputBufferTicks=1,
-        .markers={{2,9},{1,7}}},
+        .markers={{2,9},{1,7}},
+        .cancelWindows={{1,3,{20}}}},
         {.id=20,.activeTicks=3}};
     const auto saved = saveFixedActionDocument(authored);
     CHECK_TRUE(saved.has_value());
@@ -32,6 +33,8 @@ TEST_CASE(authored_document_roundtrips_and_compiles_to_stable_timeline) {
     CHECK_TRUE(loaded.has_value());
     CHECK_TRUE(loaded->actions.size() == 2 && loaded->actions[0].id == 20);
     CHECK_TRUE(loaded->actions[1].markers[0].offset == 1);
+    CHECK_TRUE(loaded->actions[1].cancelWindows.size() == 1
+        && loaded->actions[1].cancelWindows[0].nextActions[0] == 20);
     const auto savedAgain = saveFixedActionDocument(*loaded);
     CHECK_TRUE(savedAgain && *savedAgain == *saved);
     auto timeline = FixedActionTimeline::compile(loaded->actions);
@@ -44,6 +47,9 @@ TEST_CASE(authored_document_roundtrips_and_compiles_to_stable_timeline) {
     CHECK_FALSE(saveFixedActionDocument(invalid).has_value());
     CHECK_FALSE(loadFixedActionDocument(R"({"version":2,"actions":[]})").has_value());
     CHECK_FALSE(loadFixedActionDocument(R"({"version":1,"actions":[],"unknown":1})").has_value());
+    auto invalidWindow = *loaded;
+    invalidWindow.actions[1].cancelWindows[0].endOffset = 8;
+    CHECK_FALSE(saveFixedActionDocument(invalidWindow).has_value());
     CHECK_FALSE(loadFixedActionDocument(R"({"version":1,"actions":[{"id":-1}]})").has_value());
     CHECK_FALSE(loadFixedActionDocument(R"({"version":1,"actions":[{"id":1,"windupTicks":0,"activeTicks":0,"recoveryTicks":0,"inputBufferTicks":0,"markers":[]}]})").has_value());
 }
@@ -149,6 +155,42 @@ TEST_CASE(cancel_and_new_start_share_one_unprocessed_tick) {
     CHECK_TRUE(frame.action==20 && frame.phase==FixedActionPhase::Active);
     CHECK_TRUE(frame.cues.size()==1 && frame.cues.front().kind==FixedActionCueKind::PhaseEntered);
     CHECK_TRUE(actions.step(3)->cues.back().kind==FixedActionCueKind::Finished);
+}
+TEST_CASE(authored_cancel_window_transitions_atomically_after_cost_precheck) {
+    FixedActionDefinition attack;
+    attack.id=10;
+    attack.windupTicks=1;
+    attack.activeTicks=2;
+    attack.recoveryTicks=1;
+    attack.cancelWindows={{1,3,{20}}};
+    FixedActionDefinition dodge;
+    dodge.id=20;
+    dodge.activeTicks=2;
+    auto actions=FixedActionTimeline::compile({attack,dodge}).value();
+    CHECK_TRUE(actions.start(10,91,1).has_value());
+    CHECK_TRUE(actions.canCancelInto(20,1).error().code==Error::Busy);
+    CHECK_TRUE(actions.step(1)->phase==FixedActionPhase::Windup);
+    CHECK_TRUE(actions.canCancelInto(10,2).error().code==Error::Busy);
+    const auto before=actions.checkpoint();
+    CHECK_TRUE(actions.transition(20,0,2).error().code==Error::Invalid);
+    CHECK_TRUE(actions.checkpoint().action==before.action
+        && actions.checkpoint().lastTick==before.lastTick);
+    CHECK_TRUE(actions.canCancelInto(20,2).has_value());
+    const auto cancelled=actions.transition(20,92,2).value();
+    CHECK_TRUE(cancelled.kind==FixedActionCueKind::Cancelled
+        && cancelled.action==10 && cancelled.execution==91);
+    const auto frame=actions.step(2).value();
+    CHECK_TRUE(frame.action==20 && frame.execution==92
+        && frame.phase==FixedActionPhase::Active);
+    CHECK_TRUE(actions.canCancelInto(10,3).error().code==Error::Busy);
+
+    auto changed=attack;
+    changed.cancelWindows[0].startOffset=2;
+    auto other=FixedActionTimeline::compile({changed,dodge}).value();
+    CHECK_TRUE(other.restore(before).error().code==Error::Invalid);
+    changed=attack;
+    changed.cancelWindows[0].nextActions={30};
+    CHECK_TRUE(FixedActionTimeline::compile({changed,dodge}).error().code==Error::Missing);
 }
 TEST_CASE(skipped_repeated_and_late_ticks_are_rejected_without_mutation) {
     auto actions=timeline();

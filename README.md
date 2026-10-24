@@ -38,7 +38,12 @@ and two hand contact lanes, Combat settles two distinct targets once each, and a
 the following step. `FixedActionTimeline` supplies reusable data-defined
 windup/active/recovery lengths, ordered tick markers, a one-slot final-window
 input buffer, cancellation and snapshot restore. It accepts an already charged
-Ability execution; buffered input is only intent and is charged when the host
+Ability execution. Authored `cancelWindows` can allow only named follow-up
+actions on chosen ticks: precheck with `canCancelInto`, charge the new Ability
+cost, then call `transition` before `step` on that tick. The old action's
+buffer is discarded, and failure leaves the timeline unchanged. Forced hit
+stun or script interruption still uses `cancel`.
+Buffered input is only intent and is charged when the host
 starts its next action. The host still owns Entity mapping, animation, movement
 and hit settlement. Each `step(tick)` advances exactly one fixed tick.
 Compilation rejects duplicate marker IDs on the same action tick. Snapshot
@@ -49,8 +54,11 @@ precommit fails: it stays idle without spending resources or moving the capsule.
 
 `AYAbility/FixedActionDocument.h` adds a bounded version-1 JSON authoring path
 for these phase definitions. It validates the same timeline rules, canonicalizes
-action and marker order, and rejects unknown fields; the separate file
-`examples/action3d.timeline.json` is accepted by `AYAbility_Action3DExample`
+action and marker order, and rejects unknown fields. It can optionally carry
+cancel windows with `[startOffset,endOffset)` and allowed
+next action IDs. Older documents without windows retain their canonical JSON
+and definition fingerprint. The separate file `examples/action3d.timeline.json`
+is accepted by `AYAbility_Action3DExample`
 as an optional command-line argument. Marker meanings, Ability bindings,
 animations and hit queries remain in the host. This document holds no runtime
 handles or checkpoint state.
