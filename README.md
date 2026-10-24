@@ -47,6 +47,14 @@ cancel and a new accepted start may share the next unprocessed tick.
 The headless scenario also checks a buffered dodge whose Ability resource
 precommit fails: it stays idle without spending resources or moving the capsule.
 
+`AYAbility/FixedActionDocument.h` adds a bounded version-1 JSON authoring path
+for these phase definitions. It validates the same timeline rules, canonicalizes
+action and marker order, and rejects unknown fields; the separate file
+`examples/action3d.timeline.json` is accepted by `AYAbility_Action3DExample`
+as an optional command-line argument. Marker meanings, Ability bindings,
+animations and hit queries remain in the host. This document holds no runtime
+handles or checkpoint state.
+
 `Catalog::compile` validates typed numeric parameters, constant/table/curve
 progression, feature unlocks and references. `Runtime::fire` can call an optional
 pre-commit hook for one external atomic cost; failure leaves local ammunition,

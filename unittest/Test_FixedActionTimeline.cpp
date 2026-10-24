@@ -1,5 +1,6 @@
 #include <AYTest.h>
 #include <AYAbility/FixedActionTimeline.h>
+#include <AYAbility/FixedActionDocument.h>
 
 using namespace ayt::ability;
 namespace {
@@ -19,6 +20,33 @@ FixedActionTimeline timeline() {
 }
 
 TEST_SUITE(FixedActionTimelineTests)
+TEST_CASE(authored_document_roundtrips_and_compiles_to_stable_timeline) {
+    FixedActionDocument authored;
+    authored.actions = {{.id=30,.windupTicks=1,.activeTicks=2,
+        .recoveryTicks=1,.inputBufferTicks=1,
+        .markers={{2,9},{1,7}}},
+        {.id=20,.activeTicks=3}};
+    const auto saved = saveFixedActionDocument(authored);
+    CHECK_TRUE(saved.has_value());
+    const auto loaded = loadFixedActionDocument(*saved);
+    CHECK_TRUE(loaded.has_value());
+    CHECK_TRUE(loaded->actions.size() == 2 && loaded->actions[0].id == 20);
+    CHECK_TRUE(loaded->actions[1].markers[0].offset == 1);
+    const auto savedAgain = saveFixedActionDocument(*loaded);
+    CHECK_TRUE(savedAgain && *savedAgain == *saved);
+    auto timeline = FixedActionTimeline::compile(loaded->actions);
+    CHECK_TRUE(timeline.has_value());
+    CHECK_TRUE(timeline->start(30,91,1).has_value());
+    CHECK_TRUE(timeline->step(1)->phase == FixedActionPhase::Windup);
+    CHECK_TRUE(timeline->step(2)->cues.back().marker == 7);
+    auto invalid = *loaded;
+    invalid.actions[1].markers.push_back({1,7});
+    CHECK_FALSE(saveFixedActionDocument(invalid).has_value());
+    CHECK_FALSE(loadFixedActionDocument(R"({"version":2,"actions":[]})").has_value());
+    CHECK_FALSE(loadFixedActionDocument(R"({"version":1,"actions":[],"unknown":1})").has_value());
+    CHECK_FALSE(loadFixedActionDocument(R"({"version":1,"actions":[{"id":-1}]})").has_value());
+    CHECK_FALSE(loadFixedActionDocument(R"({"version":1,"actions":[{"id":1,"windupTicks":0,"activeTicks":0,"recoveryTicks":0,"inputBufferTicks":0,"markers":[]}]})").has_value());
+}
 TEST_CASE(compilation_rejects_bad_durations_duplicate_ids_and_outside_markers) {
     CHECK_TRUE(FixedActionTimeline::compile({}).error().code==Error::Invalid);
     CHECK_TRUE(FixedActionTimeline::compile({{.id=1,.activeTicks=0}})

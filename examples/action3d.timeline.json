@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "actions": [
+    {
+      "id": 20,
+      "windupTicks": 0,
+      "activeTicks": 3,
+      "recoveryTicks": 0,
+      "inputBufferTicks": 0,
+      "markers": []
+    },
+    {
+      "id": 30,
+      "windupTicks": 1,
+      "activeTicks": 1,
+      "recoveryTicks": 1,
+      "inputBufferTicks": 1,
+      "markers": [
+        {"offset": 1, "id": 1},
+        {"offset": 1, "id": 2}
+      ]
+    }
+  ]
+}

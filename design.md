@@ -45,6 +45,14 @@ buffered only in the current action's final authored window; completion releases
 its action ID for a fresh Ability activation and resource precommit. `cancel`
 or interruption before the next step discards both the running action and input
 buffer, returning a cue so the host can stop root motion and pending deliveries.
+
+`FixedActionDocument` is the optional authoring edge for the same data clock:
+version-1 JSON contains bounded numeric action IDs, durations, input-buffer
+ticks and zero-based marker offsets. Loading and saving compile a canonical
+ID/tick-ordered value first, so malformed content never replaces a running
+timeline. A sample document can drive the headless 3D scenario; the host still
+binds marker IDs to gameplay/animation/Combat behavior and owns checkpoint
+publication. Documents are capped at 1 MiB, 128 actions and 4096 markers.
 The pointer-free snapshot captures the current tick, execution, phase and
 buffered input; restore validates definition fingerprint and all tick/phase
 bounds before changing live state. The timeline does not dispatch hits, own

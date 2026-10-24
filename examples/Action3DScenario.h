@@ -18,6 +18,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace ayt::ability::action3d_example {
 
@@ -84,7 +85,8 @@ inline ayt::resource::Animation clip(float distance, const char* notify) {
 }
 
 inline Result run(bool targetDisappearsBeforeHit = false,
-                  bool denyBufferedDodge = false) {
+                  bool denyBufferedDodge = false,
+                  const std::vector<FixedActionDefinition>* authoredPhases = nullptr) {
     using namespace ayt::physics;
     using namespace ayt::combat;
     using namespace ayt::stats;
@@ -130,7 +132,8 @@ inline Result run(bool targetDisappearsBeforeHit = false,
     FixedActionDefinition dodgePhases;
     dodgePhases.id=20;
     dodgePhases.activeTicks=3;
-    auto timeline=take(FixedActionTimeline::compile({slashPhases,dodgePhases}));
+    auto timeline=take(FixedActionTimeline::compile(authoredPhases
+        ? *authoredPhases : std::vector<FixedActionDefinition>{slashPhases,dodgePhases}));
     require(timeline.canStart(30,1).has_value(),"attack start precheck");
     const auto attack = take(abilities.activate({actor,1,404},charge));
     require(attack.execution==1 && mana==15, "attack precommit/cooldown");
