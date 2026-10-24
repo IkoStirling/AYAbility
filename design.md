@@ -110,6 +110,13 @@ Body-only overlaps and unmapped contacts still use part zero. The real Jolt
 integration test hits two different shapes on one body and checks parts 7/8,
 then removes the first mapping and checks part zero and resulting health.
 
+Code-defined 3D active Area skills may register `configureAreaSkill3D` at
+composition time. The Jolt sphere query is sampled by Combat at fixed Sim;
+Ability only owns cast cost, cooldown and area start/stop. Invalid geometry or
+missing required selection rejects before changing the binding. The optional
+Physics3D target links CombatPhysics3D, while the headless Ability target does
+not acquire a Physics dependency. Version-1 authoring has no 3D area entry.
+
 ## Editor diagnostic observations (2026-10-15)
 
 The optional Physics2D/Physics3D delivery adapters record finite swept segments, area regions and actual settlement observations through PhysicsManager::debugDraw. A red target marker means Applied/allowed; denied, duplicate or failed reports remain distinct. This never changes hit reservation, permission, simulation cadence or gameplay callbacks.

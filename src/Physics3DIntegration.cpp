@@ -243,4 +243,19 @@ Result<Ability3DDeliverySystem*> installAbility3D(ayt::entity::World& world,
         return std::unexpected(configured.error());
     return installed;
 }
+Result<void> configureAreaSkill3D(AbilitySystem& ability, ayt::entity::World& world,
+    ayt::physics::PhysicsManager& physics, Id skill,
+    ayt::combat::AreaDefinition definition, ayt::combat::AreaQuery3D query,
+    ayt::combat::AreaSelection3D selection) {
+    if (auto valid = ayt::combat::validateAreaQuery3D(query); !valid)
+        return invalid<void>(valid.error().message);
+    if (!physics.world3D()) return invalid<void>("3D physics world unavailable");
+    if (definition.permission.requireSelected && !selection)
+        return invalid<void>("selected 3D area requires a selection predicate");
+    return ability.configureAreaSkill(skill, std::move(definition),
+        [&world, &physics, query, selection = std::move(selection)](ayt::entity::EntityHandle source)
+            -> ayt::combat::Result<ayt::combat::AreaCandidateProvider> {
+            return ayt::combat::makeAreaCandidateProvider3D(world, physics, source, query, selection);
+        });
+}
 } // namespace ayt::ability

@@ -2,6 +2,7 @@
 #include <AYAbility/EntityIntegration.h>
 #include <AYAbility/Authoring.h>
 #include <AYPhysics/PhysicsManager.h>
+#include <AYCombat/Physics3DArea.h>
 #include <AYMath/MathTypes.h>
 #include <map>
 
@@ -45,4 +46,10 @@ Result<Ability3DDeliverySystem*> installAbility3D(ayt::entity::World& world,
 Result<Ability3DDeliverySystem*> installAbility3D(ayt::entity::World& world,
     ayt::physics::PhysicsManager& physics,const AuthoringDocument& document,
     const OwnedEffectBindings& effects={});
+/// Bind an active area skill to a source-following 3D sphere candidate query.
+/// Selection remains a pure game-supplied fact; Combat owns membership and effects.
+Result<void> configureAreaSkill3D(AbilitySystem& ability, ayt::entity::World& world,
+    ayt::physics::PhysicsManager& physics, Id skill,
+    ayt::combat::AreaDefinition definition, ayt::combat::AreaQuery3D query,
+    ayt::combat::AreaSelection3D selection = {});
 } // namespace ayt::ability

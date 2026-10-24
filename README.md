@@ -165,8 +165,14 @@ maps each live collider to a Combat part ID; zero removes a mapping. Unmapped
 contacts and body-only overlap stages use part zero. Rebind after collider/world
 replacement; `bind` clears mappings. Keep PhysicsManager alive through World shutdown.
 
-An editor, arbitrary behavior graphs, full area release provenance, 3D area
-geometry and coordinated World checkpointing remain unimplemented.
+`configureAreaSkill3D` connects a code-defined active Area skill to the
+source-following Jolt sphere provider. It validates query geometry and a
+required selection predicate before replacing the skill binding. Gameplay
+continues to call `castArea`; Combat owns current membership and effects.
+The provider is not yet serialized in the version-1 authoring document.
+
+An editor, arbitrary behavior graphs, full area release provenance, authored
+3D area bindings and coordinated World checkpointing remain unimplemented.
 The [execution plan](../../AYDocs/AYABILITY-IMPLEMENTATION-PLAN.md) tracks those
 stages. The module is registered as a Git submodule and does not require renderer, input devices or
 physics to build its Core.
