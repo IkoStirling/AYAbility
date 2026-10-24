@@ -11,8 +11,9 @@ enum class FixedActionCueKind : std::uint8_t {
     PhaseEntered, Marker, Finished, Cancelled, Interrupted
 };
 
-/// Marker offsets are zero-based fixed ticks from action start. Meaning belongs
-/// to authored content and the host; the timeline never invokes gameplay code.
+/// Marker offsets are zero-based fixed ticks from action start. An action
+/// cannot repeat one marker ID at the same offset. Meaning belongs to authored
+/// content and the host; the timeline never invokes gameplay code.
 struct FixedActionMarker { std::uint32_t offset=0; Id id=0; };
 struct FixedActionDefinition {
     Id id=0;
@@ -38,8 +39,9 @@ struct FixedActionFrame {
     Id readyBufferedAction=0;
 };
 
-/// Pointer-free state. Restore checks definition fingerprint and all tick bounds
-/// before replacing the live timeline, so invalid snapshots change nothing.
+/// Pointer-free state. Restore checks definition fingerprint and all tick bounds,
+/// including that a running action has not already passed its finish tick,
+/// before replacing the live timeline.
 struct FixedActionSnapshot {
     std::uint32_t version=1;
     std::uint64_t definitionFingerprint=0, lastTick=0;

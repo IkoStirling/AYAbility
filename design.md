@@ -29,11 +29,14 @@ and animation Notify consumption. It exercises attack, dodge, interruption,
 missing target mapping and a half-open same-tick hit window. The host owns
 Entity mapping; Ability's Derived stage retains the fixed delay and release
 snapshot.
+Its denied-buffered-dodge branch verifies that a failed resource precommit
+leaves the timeline idle, preserves mana and submits no root displacement.
 
 `FixedActionTimeline` is the independent data clock used by that host. Compile
 validates nonzero active duration, bounded total duration, unique action IDs,
-and marker offsets; definitions are sorted and fingerprinted. The host calls
-`canStart` before Ability resource precommit, then `start` binds its accepted
+marker offsets and duplicate marker IDs on one tick; definitions are sorted
+and fingerprinted. The host calls `canStart` before Ability resource precommit,
+then `start` binds its accepted
 execution at the next unprocessed tick without an intervening timeline mutation.
 Each `step` requires
 the next contiguous tick, emits phase-entry and authored marker cues in order,
@@ -46,6 +49,9 @@ The pointer-free snapshot captures the current tick, execution, phase and
 buffered input; restore validates definition fingerprint and all tick/phase
 bounds before changing live state. The timeline does not dispatch hits, own
 entities, choose combat rules or advance animation itself.
+In particular, a running snapshot at its final tick is invalid because that
+tick would already have emitted Finished. Cancel and replacement start can
+occur before the same unprocessed tick; only one `step` advances that tick.
 
 `AbilityEquipmentComponent` and `AbilitySkillComponent` are repeatable Actor/Scene
 authoring slots. Equipment slots contain catalog configuration IDs and one

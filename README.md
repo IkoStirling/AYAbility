@@ -36,6 +36,11 @@ input buffer, cancellation and snapshot restore. It accepts an already charged
 Ability execution; buffered input is only intent and is charged when the host
 starts its next action. The host still owns Entity mapping, animation, movement
 and hit settlement. Each `step(tick)` advances exactly one fixed tick.
+Compilation rejects duplicate marker IDs on the same action tick. Snapshot
+restore rejects a still-running action at its already-completed final tick;
+cancel and a new accepted start may share the next unprocessed tick.
+The headless scenario also checks a buffered dodge whose Ability resource
+precommit fails: it stays idle without spending resources or moving the capsule.
 
 `Catalog::compile` validates typed numeric parameters, constant/table/curve
 progression, feature unlocks and references. `Runtime::fire` can call an optional

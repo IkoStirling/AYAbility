@@ -34,6 +34,7 @@ struct Result {
     bool exactCollider = false;
     bool boundaryRejected = false;
     bool cancelledDodgeStopped = false;
+    bool deniedBufferedActionStayedIdle = false;
 };
 
 template<class T> T take(std::expected<T, ayt::ability::Diagnostic> value) {
@@ -81,7 +82,8 @@ inline ayt::resource::Animation clip(float distance, const char* notify) {
     return result;
 }
 
-inline Result run(bool targetDisappearsBeforeHit = false) {
+inline Result run(bool targetDisappearsBeforeHit = false,
+                  bool denyBufferedDodge = false) {
     using namespace ayt::physics;
     using namespace ayt::combat;
     using namespace ayt::stats;
@@ -103,9 +105,10 @@ inline Result run(bool targetDisappearsBeforeHit = false) {
     require(abilities.grant(actor,404,1).has_value(), "slash grant");
     require(abilities.grant(actor,303,1).has_value(), "dodge grant");
     int mana = 25;
+    bool denyCost = false;
     auto charge = [&](const ActivationEvent& event) -> ayt::ability::Result<void> {
         const int amount = static_cast<int>(event.resolved.cost->second);
-        if (mana < amount)
+        if (denyCost || mana < amount)
             return std::unexpected(ayt::ability::Diagnostic{ayt::ability::Error::Empty,"mana",{}});
         mana -= amount;
         return {};
@@ -277,6 +280,25 @@ inline Result run(bool targetDisappearsBeforeHit = false) {
     // interrupts it before animation/physics submission; no motion is replayed.
     require(timeline.canStart(recovery.readyBufferedAction,4).has_value(),
         "buffered dodge start precheck");
+    if (denyBufferedDodge) {
+        denyCost = true;
+        const auto deniedDodge=abilities.activate({actor,4,303},charge);
+        require(!deniedDodge && deniedDodge.error().code==ayt::ability::Error::Empty
+            && mana==15 && !timeline.running(),
+            "denied buffered intent charged or started");
+        animation.stop();
+        require(take(timeline.step(4)).phase==FixedActionPhase::Idle,
+            "denied buffered intent left action active");
+        accepted(world->getCharacterState(character,actorState));
+        const auto feet=actorState.position;
+        accepted(manager->stepAndWait(dt));
+        accepted(world->getCharacterState(character,actorState));
+        output.deniedBufferedActionStayedIdle =
+            animation.consumeRootMotionTranslation().lengthSq()==0 &&
+            std::abs(actorState.position.x-feet.x)<0.06f &&
+            timeline.canStart(20,5).has_value();
+        return output;
+    }
     const auto dodgeAccepted=take(abilities.activate({actor,4,303},charge));
     require(dodgeAccepted.execution==2 && mana==5,"dodge precommit");
     require(timeline.start(recovery.readyBufferedAction,dodgeAccepted.execution,4)

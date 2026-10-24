@@ -29,6 +29,9 @@ TEST_CASE(compilation_rejects_bad_durations_duplicate_ids_and_outside_markers) {
     bad.id=1;
     bad.markers={{1,7}};
     CHECK_TRUE(FixedActionTimeline::compile({bad}).error().code==Error::Invalid);
+    bad.activeTicks=2;
+    bad.markers={{0,7},{0,8},{0,7}};
+    CHECK_TRUE(FixedActionTimeline::compile({bad}).error().code==Error::Duplicate);
 }
 TEST_CASE(phase_markers_and_buffered_input_follow_exact_fixed_ticks) {
     auto actions=timeline();
@@ -100,6 +103,24 @@ TEST_CASE(snapshot_restores_pending_and_running_action_but_rejects_stale_content
     invalid=mid;
     invalid.bufferedTick=1;
     CHECK_TRUE(again.restore(invalid).error().code==Error::Invalid);
+    invalid=mid;
+    invalid.lastTick=4; // The last tick would already have emitted Finished.
+    invalid.lastPhase=FixedActionPhase::Recovery;
+    CHECK_TRUE(again.restore(invalid).error().code==Error::Invalid);
+    CHECK_TRUE(again.checkpoint().lastTick==before.lastTick);
+}
+TEST_CASE(cancel_and_new_start_share_one_unprocessed_tick) {
+    auto actions=timeline();
+    CHECK_TRUE(actions.start(10,91,1).has_value());
+    CHECK_TRUE(actions.step(1).has_value());
+    const auto cue=actions.cancel(2,true).value();
+    CHECK_TRUE(cue.kind==FixedActionCueKind::Interrupted && cue.tick==2);
+    CHECK_TRUE(actions.canStart(20,2).has_value());
+    CHECK_TRUE(actions.start(20,92,2).has_value());
+    const auto frame=actions.step(2).value();
+    CHECK_TRUE(frame.action==20 && frame.phase==FixedActionPhase::Active);
+    CHECK_TRUE(frame.cues.size()==1 && frame.cues.front().kind==FixedActionCueKind::PhaseEntered);
+    CHECK_TRUE(actions.step(3)->cues.back().kind==FixedActionCueKind::Finished);
 }
 TEST_CASE(skipped_repeated_and_late_ticks_are_rejected_without_mutation) {
     auto actions=timeline();

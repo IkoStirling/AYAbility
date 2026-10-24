@@ -1,6 +1,7 @@
 #include <AYAbility/FixedActionTimeline.h>
 #include <algorithm>
 #include <limits>
+#include <set>
 
 namespace ayt::ability {
 namespace {
@@ -34,9 +35,14 @@ Result<FixedActionTimeline> FixedActionTimeline::compile(
         if (!definition.id || !definition.activeTicks || !total || total>MaxDuration ||
             definition.inputBufferTicks>total)
             return fail<FixedActionTimeline>(Error::Invalid,"invalid fixed action duration");
-        for (const auto& marker:definition.markers)
+        std::set<std::pair<std::uint32_t,Id>> uniqueMarkers;
+        for (const auto& marker:definition.markers) {
             if (!marker.id || marker.offset>=total)
                 return fail<FixedActionTimeline>(Error::Invalid,"invalid fixed action marker");
+            if (!uniqueMarkers.emplace(marker.offset,marker.id).second)
+                return fail<FixedActionTimeline>(Error::Duplicate,
+                    "duplicate fixed action marker on one tick");
+        }
         std::stable_sort(definition.markers.begin(),definition.markers.end(),
             [](const auto& a,const auto& b){return a.offset<b.offset;});
         const Id id=definition.id;
@@ -172,7 +178,7 @@ Result<void> FixedActionTimeline::restore(const FixedActionSnapshot& snapshot) {
             return fail<void>(Error::Invalid,"invalid running fixed action snapshot");
         const auto total=duration(found->second);
         if (snapshot.startTick>std::numeric_limits<std::uint64_t>::max()-total ||
-            snapshot.lastTick>=snapshot.startTick+total)
+            snapshot.lastTick>=snapshot.startTick+total-1)
             return fail<void>(Error::Invalid,"fixed action snapshot past completion");
         const auto expected=snapshot.startTick>snapshot.lastTick
             ?FixedActionPhase::Idle:phaseAt(found->second,snapshot.lastTick-snapshot.startTick);
