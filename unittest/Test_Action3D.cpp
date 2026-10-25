@@ -26,6 +26,13 @@ TEST_CASE(target_disappearing_in_active_tick_cannot_receive_hit) {
     CHECK_TRUE(result.boundaryRejected);
     CHECK_TRUE(result.cancelledDodgeStopped);
 }
+TEST_CASE(second_target_settlement_failure_keeps_both_queried_targets_unhurt) {
+    const auto result=ayt::ability::action3d_example::run(false,false,nullptr,true);
+    CHECK_INT_EQ(result.healthAfterHit,100);
+    CHECK_INT_EQ(result.secondHealthAfterHit,100);
+    CHECK_TRUE(result.exactCollider);
+    CHECK_TRUE(result.boundaryRejected);
+}
 TEST_CASE(denied_buffered_dodge_does_not_charge_or_move) {
     const auto result=ayt::ability::action3d_example::run(false,true);
     CHECK_INT_EQ(result.manaAfterAttack,15);

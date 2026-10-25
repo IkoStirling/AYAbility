@@ -34,7 +34,7 @@ its stable Ability binding when another actor equips it.
 The optional `AYAbility_Action3DExample` demonstrates one headless fixed-step
 attack and dodge: Ability accepts input and charges a resource, Animation
 extracts root translation and composes evaluated hand sockets, Physics sweeps the capsule
-and two hand contact lanes, Combat settles two distinct targets once each, and a cancel stops the dodge before
+and two hand contact lanes, Combat stages both targets in one low-level numerical batch with hit receipts, and a cancel stops the dodge before
 the following step. `FixedActionTimeline` supplies reusable data-defined
 windup/active/recovery lengths, ordered tick markers, a one-slot final-window
 input buffer, cancellation and snapshot restore. It accepts an already charged

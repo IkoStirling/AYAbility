@@ -86,7 +86,8 @@ inline ayt::resource::Animation clip(float distance, const char* notify) {
 
 inline Result run(bool targetDisappearsBeforeHit = false,
                   bool denyBufferedDodge = false,
-                  const std::vector<FixedActionDefinition>* authoredPhases = nullptr) {
+                  const std::vector<FixedActionDefinition>* authoredPhases = nullptr,
+                  bool rejectSecondBatchTarget = false) {
     using namespace ayt::physics;
     using namespace ayt::combat;
     using namespace ayt::stats;
@@ -284,20 +285,36 @@ inline Result run(bool targetDisappearsBeforeHit = false,
             .resource=statId("health"),.expectedVersion=health->version(),
             .calculation={.seed=123,.tick=2,.calculation=1,.hit=1}};
         const std::array<ayt::stats::Value,1> amount{release.stages[0].amount};
-        auto settled=settle(request,relations,ledger,*health,*formula,amount);
-        if (!settled) throw std::runtime_error("combat settlement: "+settled.error().message);
-        require(settled->state==OutcomeState::Applied,
-            "combat settlement rejected target");
-        require(!settle(request,relations,ledger,*health,*formula,amount),"duplicate hit applied");
-        request.hit={attackRef,2,secondTarget,2,0,active.hitWindows[1].id};
-        request.target={secondTarget,2,mask(Capability::Damageable)};
-        request.expectedVersion=secondHealth->version();
-        request.calculation.hit=2;
-        auto secondSettled=settle(request,relations,ledger,*secondHealth,*formula,amount);
-        require(secondSettled && secondSettled->state==OutcomeState::Applied,
-            "second target was not settled");
-        require(!settle(request,relations,ledger,*secondHealth,*formula,amount),
-            "second duplicate hit applied");
+        auto secondRequest=request;
+        secondRequest.hit={attackRef,2,secondTarget,2,0,active.hitWindows[1].id};
+        secondRequest.target={secondTarget,2,mask(Capability::Damageable)};
+        secondRequest.expectedVersion=secondHealth->version();
+        secondRequest.calculation.hit=2;
+        if (rejectSecondBatchTarget)
+            secondRequest.resource=statId("missing");
+        std::array<CombatBatchHit,2> hits{{
+            {request,&*formula,amount},{secondRequest,&*formula,amount}}};
+        const std::array<CombatBatchTarget,2> targets{{
+            {target,&*health,nullptr},{secondTarget,&*secondHealth,nullptr}}};
+        std::vector<CombatOutcome> outcomes;
+        auto settled=settleBatch(hits,targets,relations,ledger,outcomes);
+        if (rejectSecondBatchTarget) {
+            require(!settled && settled.error().code==ayt::combat::Error::Missing
+                && health->read(statId("health"))->current==100
+                && secondHealth->read(statId("health"))->current==100
+                && ledger.retainedRequests()==0 && outcomes.empty(),
+                "failed second target left partial combat publication");
+        } else {
+            if (!settled) throw std::runtime_error("combat batch: "+settled.error().message);
+            require(outcomes.size()==2
+                && outcomes[0].state==OutcomeState::Applied
+                && outcomes[1].state==OutcomeState::Applied,
+                "combat batch rejected a queried target");
+            hits[0].request.expectedVersion=health->version();
+            hits[1].request.expectedVersion=secondHealth->version();
+            require(!settleBatch(hits,targets,relations,ledger,outcomes),
+                "duplicate batch applied");
+        }
     }
     // A body may still be in the physics snapshot after its gameplay target
     // disappears. The host refuses to map it to a live CombatantView.

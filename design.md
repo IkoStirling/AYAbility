@@ -24,9 +24,11 @@ and lifetime policy.
 `examples/Action3DScenario.h` is a host composition example, not a gameplay
 rule installed by Ability. Its fixed ticks order input acceptance and resource
 precommit, action phase selection, Animation root-motion extraction, Physics
-controller sweep, completed-state/evaluated-socket queries, two-target Combat hit settlement,
+controller sweep, completed-state/evaluated-socket queries, a two-target
+Combat `settleBatch` candidate publication,
 and animation Notify consumption. It exercises attack, dodge, interruption,
-missing target mapping and a half-open same-tick hit window. The host owns
+missing target mapping, second-target batch failure without partial damage,
+and a half-open same-tick hit window. The host owns
 Entity mapping; Ability's Derived stage retains the fixed delay and release
 snapshot.
 Its denied-buffered-dodge branch verifies that a failed resource precommit
