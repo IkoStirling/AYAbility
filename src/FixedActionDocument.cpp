@@ -14,6 +14,7 @@ constexpr std::size_t MaxBytes = 1024 * 1024;
 constexpr std::size_t MaxActions = 128;
 constexpr std::size_t MaxMarkers = 4096;
 constexpr std::size_t MaxCancelWindows = 4096;
+constexpr std::size_t MaxHitWindows = 4096;
 
 template<class T> Result<T> invalid(std::string message) {
     return std::unexpected(Diagnostic{Error::Invalid, std::move(message), {}});
@@ -37,11 +38,13 @@ Result<FixedActionDocument> canonical(FixedActionDocument document) {
     if (document.version != 1 || document.actions.empty()
         || document.actions.size() > MaxActions)
         return invalid<FixedActionDocument>("invalid fixed action document version or action count");
-    std::size_t markerCount = 0, windowCount = 0;
+    std::size_t markerCount = 0, windowCount = 0, hitWindowCount = 0;
     for (auto& action : document.actions) {
         markerCount += action.markers.size();
         windowCount += action.cancelWindows.size();
-        if (markerCount > MaxMarkers || windowCount > MaxCancelWindows)
+        hitWindowCount += action.hitWindows.size();
+        if (markerCount > MaxMarkers || windowCount > MaxCancelWindows
+            || hitWindowCount > MaxHitWindows)
             return invalid<FixedActionDocument>("fixed action marker/window budget exceeded");
         std::sort(action.markers.begin(), action.markers.end(),
             [](const auto& left, const auto& right) {
@@ -55,6 +58,11 @@ Result<FixedActionDocument> canonical(FixedActionDocument document) {
                 return left.startOffset != right.startOffset
                     ? left.startOffset < right.startOffset
                     : left.endOffset < right.endOffset;
+            });
+        std::sort(action.hitWindows.begin(), action.hitWindows.end(),
+            [](const auto& left, const auto& right) {
+                return left.startOffset != right.startOffset
+                    ? left.startOffset < right.startOffset : left.id < right.id;
             });
     }
     std::sort(document.actions.begin(), document.actions.end(),
@@ -79,9 +87,10 @@ Result<FixedActionDocument> loadFixedActionDocument(std::string_view text) {
             return invalid<FixedActionDocument>("invalid fixed action count");
         FixedActionDocument document;
         document.actions.reserve(rows.size());
-        std::size_t markerCount = 0, windowCount = 0;
+        std::size_t markerCount = 0, windowCount = 0, hitWindowCount = 0;
         for (const auto& row : rows) {
             if (!row.is_object() || row.size() != 6 + row.contains("cancelWindows")
+                    + row.contains("hitWindows")
                 || !row.at("markers").is_array())
                 return invalid<FixedActionDocument>("invalid fixed action row");
             FixedActionDefinition action;
@@ -121,6 +130,20 @@ Result<FixedActionDocument> loadFixedActionDocument(std::string_view text) {
                     action.cancelWindows.push_back(std::move(window));
                 }
             }
+            if (row.contains("hitWindows")) {
+                const auto& windows = row.at("hitWindows");
+                if (!windows.is_array())
+                    return invalid<FixedActionDocument>("invalid fixed action hit windows");
+                hitWindowCount += windows.size();
+                if (hitWindowCount > MaxHitWindows)
+                    return invalid<FixedActionDocument>("fixed action hit window budget exceeded");
+                for (const auto& value : windows) {
+                    if (!value.is_object() || value.size() != 3)
+                        return invalid<FixedActionDocument>("invalid fixed action hit window");
+                    action.hitWindows.push_back({tickValue(value,"startOffset"),
+                        tickValue(value,"endOffset"),tickValue(value,"id")});
+                }
+            }
             document.actions.push_back(std::move(action));
         }
         return canonical(std::move(document));
@@ -152,6 +175,13 @@ Result<std::string> saveFixedActionDocument(
                         {"endOffset", window.endOffset},
                         {"nextActions", window.nextActions}});
                 row["cancelWindows"] = std::move(windows);
+            }
+            if (!action.hitWindows.empty()) {
+                Json windows = Json::array();
+                for (const auto& window : action.hitWindows)
+                    windows.push_back({{"startOffset", window.startOffset},
+                        {"endOffset", window.endOffset}, {"id", window.id}});
+                row["hitWindows"] = std::move(windows);
             }
             root["actions"].push_back(std::move(row));
         }

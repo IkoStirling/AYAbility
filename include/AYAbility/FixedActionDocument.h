@@ -8,7 +8,8 @@ namespace ayt::ability {
 
 /// Versioned author data for a fixed-step action timeline. IDs are stable
 /// numeric content references; markers still have game-defined meanings.
-/// Optional cancel windows authorize named action transitions at fixed ticks.
+/// Optional cancel windows authorize named action transitions at fixed ticks;
+/// hit windows mark stable attack channels within the Active phase.
 struct FixedActionDocument {
     std::uint32_t version = 1;
     std::vector<FixedActionDefinition> actions;

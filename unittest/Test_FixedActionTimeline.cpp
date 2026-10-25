@@ -25,7 +25,8 @@ TEST_CASE(authored_document_roundtrips_and_compiles_to_stable_timeline) {
     authored.actions = {{.id=30,.windupTicks=1,.activeTicks=2,
         .recoveryTicks=1,.inputBufferTicks=1,
         .markers={{2,9},{1,7}},
-        .cancelWindows={{1,3,{20}}}},
+        .cancelWindows={{1,3,{20}}},
+        .hitWindows={{1,3,4}}},
         {.id=20,.activeTicks=3}};
     const auto saved = saveFixedActionDocument(authored);
     CHECK_TRUE(saved.has_value());
@@ -35,6 +36,8 @@ TEST_CASE(authored_document_roundtrips_and_compiles_to_stable_timeline) {
     CHECK_TRUE(loaded->actions[1].markers[0].offset == 1);
     CHECK_TRUE(loaded->actions[1].cancelWindows.size() == 1
         && loaded->actions[1].cancelWindows[0].nextActions[0] == 20);
+    CHECK_TRUE(loaded->actions[1].hitWindows.size() == 1
+        && loaded->actions[1].hitWindows[0].id == 4);
     const auto savedAgain = saveFixedActionDocument(*loaded);
     CHECK_TRUE(savedAgain && *savedAgain == *saved);
     auto timeline = FixedActionTimeline::compile(loaded->actions);
@@ -50,8 +53,55 @@ TEST_CASE(authored_document_roundtrips_and_compiles_to_stable_timeline) {
     auto invalidWindow = *loaded;
     invalidWindow.actions[1].cancelWindows[0].endOffset = 8;
     CHECK_FALSE(saveFixedActionDocument(invalidWindow).has_value());
+    invalidWindow = *loaded;
+    invalidWindow.actions[1].hitWindows[0].endOffset = 4;
+    CHECK_FALSE(saveFixedActionDocument(invalidWindow).has_value());
     CHECK_FALSE(loadFixedActionDocument(R"({"version":1,"actions":[{"id":-1}]})").has_value());
     CHECK_FALSE(loadFixedActionDocument(R"({"version":1,"actions":[{"id":1,"windupTicks":0,"activeTicks":0,"recoveryTicks":0,"inputBufferTicks":0,"markers":[]}]})").has_value());
+}
+TEST_CASE(authored_hit_windows_cover_exact_active_ticks_and_guard_restore) {
+    FixedActionDefinition attack;
+    attack.id=10;
+    attack.windupTicks=1;
+    attack.activeTicks=3;
+    attack.recoveryTicks=1;
+    attack.hitWindows={{2,4,8},{1,3,7}};
+    auto timeline=FixedActionTimeline::compile({attack}).value();
+    CHECK_TRUE(timeline.start(10,41,1).has_value());
+    const auto saved=timeline.checkpoint();
+    CHECK_TRUE(timeline.step(1)->hitWindows.empty());
+    const auto first=timeline.step(2).value();
+    CHECK_TRUE(first.hitWindows.size()==1 && first.hitWindows[0].id==7
+        && first.hitWindows[0].beginTick==2 && first.hitWindows[0].endTick==4);
+    auto resumed=FixedActionTimeline::compile({attack}).value();
+    CHECK_TRUE(resumed.restore(timeline.checkpoint()).has_value());
+    const auto overlap=timeline.step(3).value();
+    const auto resumedOverlap=resumed.step(3).value();
+    CHECK_TRUE(overlap.hitWindows.size()==2 && overlap.hitWindows[0].id==7
+        && overlap.hitWindows[1].id==8
+        && overlap.hitWindows[1].beginTick==3
+        && overlap.hitWindows[1].endTick==5);
+    CHECK_TRUE(resumedOverlap.hitWindows.size()==2
+        && resumedOverlap.hitWindows[0].beginTick==2
+        && resumedOverlap.hitWindows[1].endTick==5);
+    const auto finalActive=timeline.step(4).value();
+    CHECK_TRUE(finalActive.hitWindows.size()==1
+        && finalActive.hitWindows[0].id==8);
+    CHECK_TRUE(timeline.step(5)->hitWindows.empty());
+
+    auto changed=attack;
+    changed.hitWindows[0].startOffset=1;
+    auto different=FixedActionTimeline::compile({changed}).value();
+    CHECK_TRUE(different.restore(saved).error().code==Error::Invalid);
+    auto invalid=attack;
+    invalid.hitWindows.push_back({1,2,7});
+    CHECK_TRUE(FixedActionTimeline::compile({invalid}).error().code==Error::Duplicate);
+    invalid=attack;
+    invalid.hitWindows[0].endOffset=5;
+    CHECK_TRUE(FixedActionTimeline::compile({invalid}).error().code==Error::Invalid);
+    invalid=attack;
+    invalid.hitWindows[0].startOffset=0;
+    CHECK_TRUE(FixedActionTimeline::compile({invalid}).error().code==Error::Invalid);
 }
 TEST_CASE(compilation_rejects_bad_durations_duplicate_ids_and_outside_markers) {
     CHECK_TRUE(FixedActionTimeline::compile({}).error().code==Error::Invalid);

@@ -19,6 +19,10 @@
         {"offset": 1, "id": 1},
         {"offset": 1, "id": 2}
       ],
+      "hitWindows": [
+        {"startOffset": 1, "endOffset": 2, "id": 1},
+        {"startOffset": 1, "endOffset": 2, "id": 2}
+      ],
       "cancelWindows": [
         {"startOffset": 2, "endOffset": 3, "nextActions": [20]}
       ]

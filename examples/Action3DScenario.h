@@ -129,6 +129,7 @@ inline Result run(bool targetDisappearsBeforeHit = false,
     slashPhases.recoveryTicks=1;
     slashPhases.inputBufferTicks=1;
     slashPhases.markers={{1,1},{1,2}}; // Hand query and presentation effect.
+    slashPhases.hitWindows={{1,2,1},{1,2,2}};
     FixedActionDefinition dodgePhases;
     dodgePhases.id=20;
     dodgePhases.activeTicks=3;
@@ -190,7 +191,6 @@ inline Result run(bool targetDisappearsBeforeHit = false,
     require(animation.setRootMotionBone("Root"),"root motion track missing");
     HitLedger ledger;
     const AttackRef attackRef{1,attack.execution};
-    require(ledger.open(attackRef,{},2,3).has_value(),"hit window open");
 
     // Fixed tick 1: windup, then physics and authoritative feet snapshot.
     const auto windup=take(timeline.step(1));
@@ -205,6 +205,14 @@ inline Result run(bool targetDisappearsBeforeHit = false,
     // the controller's completed feet state anchors the authoritative query.
     const auto active=take(timeline.step(2));
     require(active.phase==FixedActionPhase::Active,"attack active phase");
+    require(active.hitWindows.size()==2 && active.hitWindows[0].id==1
+        && active.hitWindows[1].id==2
+        && active.hitWindows[0].beginTick==2
+        && active.hitWindows[0].endTick==3
+        && active.hitWindows[1].beginTick==2
+        && active.hitWindows[1].endTick==3,"authored hit windows");
+    require(ledger.open(attackRef,{HitScope::Segment,0},active.hitWindows[0].beginTick,
+        active.hitWindows[0].endTick).has_value(),"hit window open");
     bool hitMarker=false, effectMarker=false;
     for (const auto& cue:active.cues)
         if (cue.kind==FixedActionCueKind::Marker) {
@@ -269,7 +277,7 @@ inline Result run(bool targetDisappearsBeforeHit = false,
     output.exactCollider=true;
     if (!targetDisappearsBeforeHit) {
         SettlementRequest request{
-            .hit={attackRef,1,target,2},
+            .hit={attackRef,1,target,2,0,active.hitWindows[0].id},
             .source={.instigator=attacker,.attribution=1,.team=1,
                 .ability=404,.abilityInstance=attack.execution},
             .target={target,2,mask(Capability::Damageable)},
@@ -281,7 +289,7 @@ inline Result run(bool targetDisappearsBeforeHit = false,
         require(settled->state==OutcomeState::Applied,
             "combat settlement rejected target");
         require(!settle(request,relations,ledger,*health,*formula,amount),"duplicate hit applied");
-        request.hit={attackRef,2,secondTarget,2};
+        request.hit={attackRef,2,secondTarget,2,0,active.hitWindows[1].id};
         request.target={secondTarget,2,mask(Capability::Damageable)};
         request.expectedVersion=secondHealth->version();
         request.calculation.hit=2;

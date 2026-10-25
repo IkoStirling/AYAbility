@@ -30,7 +30,7 @@ void hash(std::uint64_t& fingerprint, std::uint64_t value) {
 Result<FixedActionTimeline> FixedActionTimeline::compile(
     std::vector<FixedActionDefinition> definitions) {
     FixedActionTimeline timeline;
-    std::size_t totalWindows=0;
+    std::size_t totalWindows=0, totalHitWindows=0;
     for (auto& definition:definitions) {
         const auto total=duration(definition);
         if (!definition.id || !definition.activeTicks || !total || total>MaxDuration ||
@@ -70,6 +70,26 @@ Result<FixedActionTimeline> FixedActionTimeline::compile(
                 && definition.cancelWindows[i-1].endOffset==definition.cancelWindows[i].endOffset)
                 return fail<FixedActionTimeline>(Error::Duplicate,
                     "duplicate fixed action cancel window");
+        totalHitWindows+=definition.hitWindows.size();
+        if (totalHitWindows>4096)
+            return fail<FixedActionTimeline>(Error::Invalid,
+                "fixed action hit window budget exceeded");
+        std::set<std::uint32_t> hitIds;
+        for (const auto& window:definition.hitWindows) {
+            if (!window.id || window.startOffset>=window.endOffset ||
+                window.startOffset<definition.windupTicks ||
+                window.endOffset>std::uint64_t(definition.windupTicks)+definition.activeTicks)
+                return fail<FixedActionTimeline>(Error::Invalid,
+                    "hit window must lie inside the active phase");
+            if (!hitIds.insert(window.id).second)
+                return fail<FixedActionTimeline>(Error::Duplicate,
+                    "duplicate fixed action hit window id");
+        }
+        std::sort(definition.hitWindows.begin(),definition.hitWindows.end(),
+            [](const auto& a,const auto& b) {
+                return a.startOffset!=b.startOffset ? a.startOffset<b.startOffset
+                    : a.id<b.id;
+            });
         const Id id=definition.id;
         if (!timeline._definitions.emplace(id,std::move(definition)).second)
             return fail<FixedActionTimeline>(Error::Duplicate,"duplicate fixed action id");
@@ -103,6 +123,15 @@ Result<FixedActionTimeline> FixedActionTimeline::compile(
                 hash(fingerprint,window.endOffset);
                 hash(fingerprint,window.nextActions.size());
                 for (const auto target:window.nextActions) hash(fingerprint,target);
+            }
+        }
+        if (!definition.hitWindows.empty()) {
+            hash(fingerprint,0x48495457494e444full);
+            hash(fingerprint,definition.hitWindows.size());
+            for (const auto& window:definition.hitWindows) {
+                hash(fingerprint,window.startOffset);
+                hash(fingerprint,window.endOffset);
+                hash(fingerprint,window.id);
             }
         }
     }
@@ -204,6 +233,10 @@ Result<FixedActionFrame> FixedActionTimeline::step(std::uint64_t tick) {
             if (marker.offset==offset)
                 frame.cues.push_back({FixedActionCueKind::Marker,frame.phase,
                     _action,marker.id,_execution,tick});
+        for (const auto& window:definition.hitWindows)
+            if (offset>=window.startOffset && offset<window.endOffset)
+                frame.hitWindows.push_back({window.id,
+                    _startTick+window.startOffset,_startTick+window.endOffset});
         _lastPhase=frame.phase;
         if (offset+1==total) {
             frame.cues.push_back({FixedActionCueKind::Finished,frame.phase,

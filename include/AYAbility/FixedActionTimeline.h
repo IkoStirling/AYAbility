@@ -21,6 +21,13 @@ struct FixedActionCancelWindow {
     std::uint32_t startOffset=0, endOffset=0;
     std::vector<Id> nextActions;
 };
+/// [startOffset,endOffset) inside the action's Active phase. The stable ID
+/// identifies one independent hit channel. A host using Combat's HitLedger
+/// may use HitScope::Segment and this ID as the segment for per-channel dedupe.
+struct FixedActionHitWindow {
+    std::uint32_t startOffset=0, endOffset=0;
+    std::uint32_t id=0;
+};
 struct FixedActionDefinition {
     Id id=0;
     std::uint32_t windupTicks=0, activeTicks=1, recoveryTicks=0;
@@ -28,6 +35,7 @@ struct FixedActionDefinition {
     std::uint32_t inputBufferTicks=0;
     std::vector<FixedActionMarker> markers;
     std::vector<FixedActionCancelWindow> cancelWindows;
+    std::vector<FixedActionHitWindow> hitWindows;
 };
 struct FixedActionCue {
     FixedActionCueKind kind=FixedActionCueKind::Marker;
@@ -41,6 +49,10 @@ struct FixedActionFrame {
     std::uint64_t execution=0;
     /// Ordered phase, authored marker, then finish cues for this fixed tick.
     std::vector<FixedActionCue> cues;
+    /// Active authored hit channels with absolute half-open tick bounds.
+    /// The host authorizes queries here and manages its hit ledger lifetime.
+    struct ActiveHitWindow { std::uint32_t id=0; std::uint64_t beginTick=0, endTick=0; };
+    std::vector<ActiveHitWindow> hitWindows;
     /// An input buffered during recovery is released when the action finishes.
     /// The host must validate/charge it before starting the next action.
     Id readyBufferedAction=0;

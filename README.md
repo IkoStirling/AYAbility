@@ -43,6 +43,12 @@ actions on chosen ticks: precheck with `canCancelInto`, charge the new Ability
 cost, then call `transition` before `step` on that tick. The old action's
 buffer is discarded, and failure leaves the timeline unchanged. Forced hit
 stun or script interruption still uses `cancel`.
+Optional authored `hitWindows` name independent hit channels within the Active
+phase. Each frame returns active IDs and absolute half-open tick bounds; the
+host uses those bounds to authorize physics queries and can use the ID as a
+Combat `HitScope::Segment` for per-channel target deduplication. The host owns
+one ledger interval covering its chosen action span. Windows enter the content fingerprint only when present, so
+older definitions and checkpoints remain compatible.
 Buffered input is only intent and is charged when the host
 starts its next action. The host still owns Entity mapping, animation, movement
 and hit settlement. Each `step(tick)` advances exactly one fixed tick.

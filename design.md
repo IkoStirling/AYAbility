@@ -52,6 +52,14 @@ the old cancellation cue and starts the accepted execution for that same tick.
 Invalid window, tick, target or execution leaves the timeline intact. Forced
 `cancel` remains available for authoritative interruption. Window data enters
 the definition fingerprint only when present, preserving older checkpoints.
+Separate bounded hit windows identify authored attack channels entirely within
+the Active phase. Compile rejects zero/duplicate IDs and invalid ranges, then
+sorts windows by start offset and ID. Each step reports active channels with
+absolute half-open ticks derived from action start. Host-owned collision and
+Combat ledger use these values; `HitScope::Segment` can isolate per-channel
+target deduplication within a host-managed attack interval. The timeline neither samples geometry nor
+mutates HP. A cancelled action requires the host to close its open ledger.
+Only nonempty hit-window data enters the fingerprint, preserving legacy saves.
 
 `FixedActionDocument` is the optional authoring edge for the same data clock:
 version-1 JSON contains bounded numeric action IDs, durations, input-buffer
