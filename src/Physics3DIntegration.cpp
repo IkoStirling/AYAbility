@@ -160,47 +160,46 @@ void Ability3DDeliverySystem::onUpdate(float fixedSeconds) {
                 const float speed=std::sqrt(velocity.x*velocity.x+velocity.y*velocity.y+
                     velocity.z*velocity.z);
                 const float length=speed*fixedSeconds;
-                if(length>0 && std::isfinite(length)) {
-                    const ayt::math::FVector3 direction{velocity.x/speed,velocity.y/speed,
-                        velocity.z/speed};
-                    auto cursor=projectile.position;
-                    float remaining=length;
-                    for(std::uint32_t contacts=0;contacts<32 && remaining>0.001f;++contacts) {
-                        ayt::math::Ray ray{};ray.origin=cursor;ray.dir=direction;
-                        ayt::physics::RaycastHit hit{};
-                        const auto status=physics->raycastSync(ray,hit,projectile.profile.layerMask);
-                        debugRegion(cursor,cursor+direction*remaining,0,hit.hit && hit.distance<=remaining,status);
-                        if(status!=ayt::physics::PhysResult::Ok) {
-                            _errors.push_back({Error::Invalid,"3D raycast query failed",{}});
-                            break;
+                if(length>10000.0f || !std::isfinite(length))
+                    _errors.push_back({Error::Limit,"3D swept segment exceeds query limit",{}});
+                else if(length>0) {
+                    ayt::physics::RaycastAll3D query;
+                    query.origin=projectile.position;
+                    query.displacement=velocity*fixedSeconds;
+                    query.layerMask=projectile.profile.layerMask;
+                    query.includeSensors=true; // retain legacy contact semantics
+                    query.maxHits=32;
+                    if(projectile.profile.ignoreSource && projectile.sourceBody)
+                        query.ignoredBodies.push_back(projectile.sourceBody);
+                    std::vector<ayt::physics::RaycastHit> hits;
+                    const auto status=physics->raycastAll3DSync(query,hits);
+                    debugRegion(query.origin,query.origin+query.displacement,0,
+                        !hits.empty(),status);
+                    if(status!=ayt::physics::PhysResult::Ok) {
+                        _errors.push_back({status==ayt::physics::PhysResult::OutOfRange
+                            ? Error::Limit : Error::Invalid,
+                            "3D multi-hit raycast query failed",{}});
+                    } else {
+                        for(const auto& hit:hits) {
+                            auto candidate=target(hit.body);
+                            const bool combatant=candidate.isValid() &&
+                                static_cast<bool>(ayt::combat::bindCombatant(*_world,candidate));
+                            if(combatant) {
+                                const auto part=_hitParts.contains(hit.collider)?_hitParts.at(hit.collider):0;
+                                auto impact=_ability->reportDerivedHit(projectile.command.emitter,candidate,
+                                    part,projectile.age,{std::array<float,3>{hit.point.x,
+                                        hit.point.y,hit.point.z}});
+                                debugImpact(impact,candidate,hit.point);
+                                if(!impact && impact.error().code==Error::Stale)finish=true;
+                                else if(!impact && impact.error().code!=Error::Duplicate)
+                                    _errors.push_back(impact.error());
+                                if(projectile.profile.target==CollisionResponse3D::Stop)finish=true;
+                            } else if(projectile.profile.obstacle==CollisionResponse3D::Stop)
+                                finish=true;
+                            if(finish)break;
                         }
-                        if(!hit.hit || hit.distance>remaining+0.0001f)break;
-                        const bool ownBody=projectile.profile.ignoreSource &&
-                            hit.body==projectile.sourceBody;
-                        auto candidate=target(hit.body);
-                        const bool combatant=candidate.isValid() &&
-                            static_cast<bool>(ayt::combat::bindCombatant(*_world,candidate));
-                        if(!ownBody && combatant) {
-                            const auto part=_hitParts.contains(hit.collider)?_hitParts.at(hit.collider):0;
-                            auto impact=_ability->reportDerivedHit(projectile.command.emitter,candidate,
-                                part,projectile.age,{std::array<float,3>{hit.point.x,
-                                    hit.point.y,hit.point.z}});
-                            debugImpact(impact,candidate,hit.point);
-                            if(!impact && impact.error().code==Error::Stale)finish=true;
-                            else if(!impact && impact.error().code!=Error::Duplicate)
-                                _errors.push_back(impact.error());
-                            if(projectile.profile.target==CollisionResponse3D::Stop)finish=true;
-                        } else if(!ownBody &&
-                            projectile.profile.obstacle==CollisionResponse3D::Stop)
-                            finish=true;
-                        if(finish)break;
-                        const float step=std::max(hit.distance+0.001f,0.001f);
-                        cursor=cursor+direction*step;
-                        remaining-=step;
-                        if(contacts==31)
-                            _errors.push_back({Error::Limit,"3D contact traversal limit",{}});
+                        if(!finish)projectile.position=projectile.position+query.displacement;
                     }
-                    if(!finish)projectile.position=projectile.position+velocity*fixedSeconds;
                 }
             }
             ++projectile.age;

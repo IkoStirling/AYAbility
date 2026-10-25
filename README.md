@@ -178,6 +178,11 @@ within a compound. At composition time, `Ability3DDeliverySystem::setHitPart`
 maps each live collider to a Combat part ID; zero removes a mapping. Unmapped
 contacts and body-only overlap stages use part zero. Rebind after collider/world
 replacement; `bind` clears mappings. Keep PhysicsManager alive through World shutdown.
+Moving stages now use one finite Jolt multi-hit query per fixed step. Authored
+target and obstacle Stop/PassThrough responses consume sorted contacts in order;
+source-body exclusion happens inside the physics query. A segment over 10000
+units or more than 32 contacts records an error and does not advance that
+projectile on the failed step. Combat still owns permission and damage rules.
 
 `configureAreaSkill3D` connects a code-defined active Area skill to the
 source-following Jolt sphere or oriented-box provider. It validates query geometry and a

@@ -119,6 +119,38 @@ TEST_CASE(jolt_contact_reports_to_ability_and_combat) {
     CHECK_TRUE(std::any_of(combat->outcomes().begin(),combat->outcomes().end(),
         [](const auto& outcome){return outcome.part==0;}));
     CHECK_TRUE(delivery->errors().empty());
+    // One finite query crosses a noncombat obstacle and settles two targets
+    // in distance order when both authored responses permit passage.
+    auto* secondTargetEntity=world.createEntity();
+    const auto secondTarget=world.getEntityHandle(secondTargetEntity->getId());
+    CHECK_TRUE(combat->configureActor(secondTarget,profile).has_value());
+    body.position={1.6f,0,0};
+    ayt::physics::BodyHandle secondBody=0;
+    CHECK_TRUE(manager->world3D()->createRigidbody(body,secondBody)==ayt::physics::PhysResult::Ok);
+    collider.body=secondBody;
+    ayt::physics::ColliderHandle secondTargetCollider=0;
+    CHECK_TRUE(manager->world3D()->createCollider(collider,secondTargetCollider)==ayt::physics::PhysResult::Ok);
+    auto* secondRigid=secondTargetEntity->addComponent<ayt::entity::RigidBodyComponent>();
+    secondRigid->setPhysicsDimension(ayt::entity::RigidBodyComponent::PhysicsDimension::ThreeD);
+    secondRigid->setBodyHandle(secondBody);
+    body.type=ayt::physics::BodyType::Static;
+    body.position={0.5f,0,0};
+    ayt::physics::BodyHandle obstacle=0;
+    CHECK_TRUE(manager->world3D()->createRigidbody(body,obstacle)==ayt::physics::PhysResult::Ok);
+    collider.body=obstacle;
+    collider.radius=0.1f;
+    ayt::physics::ColliderHandle obstacleCollider=0;
+    CHECK_TRUE(manager->world3D()->createCollider(collider,obstacleCollider)==ayt::physics::PhysResult::Ok);
+    CHECK_TRUE(manager->stepAndWait(1.0f/60)==ayt::physics::PhysResult::Ok);
+    deliveryProfile.target=CollisionResponse3D::PassThrough;
+    deliveryProfile.obstacle=CollisionResponse3D::PassThrough;
+    CHECK_TRUE(delivery->configure(30,1,deliveryProfile).has_value());
+    CHECK_TRUE(ability->castDerived(source,404).has_value());
+    world.fixedUpdate(1.0f/60);
+    CHECK_INT_EQ(stats->read(ayt::stats::statId("health"))->current,40);
+    auto* secondStats=secondTargetEntity->getComponent<ayt::stats::StatsComponent>();
+    CHECK_INT_EQ(secondStats->read(ayt::stats::statId("health"))->current,85);
+    CHECK_TRUE(delivery->errors().empty());
     const auto debugRecords=manager->debugDraw().consumeRecords();
     CHECK(std::any_of(debugRecords.begin(),debugRecords.end(),[&](const auto& record){return record.category==ayt::physics::PhysicsDebugCategory::Ability && record.entityId==target.id && record.hit;}));
     CHECK(std::any_of(debugRecords.begin(),debugRecords.end(),[](const auto& record){return record.category==ayt::physics::PhysicsDebugCategory::Ability && !record.lines.empty();}));

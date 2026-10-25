@@ -7,7 +7,8 @@
 #include <map>
 
 namespace ayt::ability {
-/// Optional fixed-Sim Jolt adapter. Ability retains release, hit and effect authority.
+/// Optional fixed-Sim Jolt adapter. Moving stages consume one bounded multi-hit
+/// segment per step; Ability retains release, hit and effect authority.
 class Ability3DDeliverySystem final : public ayt::entity::ISystem {
 public:
     const char* getName() const override { return "Ability3DDeliverySystem"; }

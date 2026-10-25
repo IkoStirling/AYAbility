@@ -120,6 +120,12 @@ and hazard stages. Version-1 authored 3D profiles undergo full stage coverage
 preflight before the simple install mutates World. A World can own only one
 physics delivery adapter because emissions are a destructive queue. Jolt rays
 now resolve exact generation-checked ColliderHandles through compound shapes.
+Each moving stage submits one bounded finite multi-hit segment to the physics
+mailbox, preserving ordered contacts and the independently authored Stop or
+PassThrough response for obstacles and Combat targets. Source body exclusion
+is performed in the query, and sensor inclusion retains prior contact behavior.
+Overlong segments or more than 32 hits fail without partial settlement or
+position advance; the emitter still consumes its fixed-step lifetime tick.
 The 3D adapter maps them through `setHitPart(collider, part)` before reporting
 the contact to Combat, matching the 2D path. Zero erases a mapping; `bind`
 clears it, and a newly generated collider does not inherit an old mapping.
