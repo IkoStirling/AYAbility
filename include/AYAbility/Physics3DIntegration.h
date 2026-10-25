@@ -22,6 +22,9 @@ public:
     /// Zero removes the mapping. Overlap stages retain whole-body part zero.
     /// Clear/rebind mappings when collider handles or the physics world change.
     void setHitPart(ayt::physics::ColliderHandle collider,std::uint32_t part);
+    /// Bind a finite nonnegative cost for passing one collider surface. Zero
+    /// removes the mapping; bindings are cleared on World/physics rebind.
+    Result<void> setSurfaceResistance(ayt::physics::ColliderHandle collider,float cost);
     const std::vector<Diagnostic>& errors() const noexcept { return _errors; }
 private:
     struct Projectile {
@@ -30,6 +33,7 @@ private:
         ayt::math::FVector3 position{};
         ayt::physics::BodyHandle sourceBody=ayt::physics::InvalidBodyHandle;
         std::uint32_t age=0;
+        float remainingPenetration=0.0f;
     };
     ayt::entity::EntityHandle target(ayt::physics::BodyHandle body) const;
     ayt::entity::World* _world=nullptr;
@@ -38,6 +42,7 @@ private:
     std::map<std::pair<Id,Id>,Delivery3DProfile> _profiles;
     std::map<Identity,Projectile> _projectiles;
     std::map<ayt::physics::ColliderHandle,std::uint32_t> _hitParts;
+    std::map<ayt::physics::ColliderHandle,float> _surfaceResistance;
     std::vector<Diagnostic> _errors;
 };
 /// Install one delivery dimension per World. Keep PhysicsManager alive through shutdown.

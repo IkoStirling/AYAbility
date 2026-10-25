@@ -126,6 +126,12 @@ PassThrough response for obstacles and Combat targets. Source body exclusion
 is performed in the query, and sensor inclusion retains prior contact behavior.
 Overlong segments or more than 32 hits fail without partial settlement or
 position advance; the emitter still consumes its fixed-step lifetime tick.
+Optional authored penetration budget is copied into each emitter on spawn.
+`setSurfaceResistance` supplies a mutable exact-collider cost map cleared on
+rebind. Each sorted contact settles Combat first; a PassThrough then consumes
+its cost, or ends the emitter when the remaining budget is insufficient.
+Unmapped colliders cost zero, and an explicit Stop has priority. No material
+classification or thickness model is imposed on game content.
 The 3D adapter maps them through `setHitPart(collider, part)` before reporting
 the contact to Combat, matching the 2D path. Zero erases a mapping; `bind`
 clears it, and a newly generated collider does not inherit an old mapping.

@@ -30,6 +30,10 @@ struct Delivery3DProfile {
     bool ignoreSource=true;
     CollisionResponse3D obstacle=CollisionResponse3D::Stop;
     CollisionResponse3D target=CollisionResponse3D::Stop;
+    /// Optional per-emitter contact budget. Surface resistance is bound by
+    /// the Host per exact collider; disabled preserves unconditional PassThrough.
+    bool usePenetrationBudget=false;
+    float penetrationBudget=0.0f;
 };
 struct Delivery3DBinding { Id action=0,stage=0;Delivery3DProfile profile; };
 Result<void> validateDelivery3DProfile(const Delivery3DProfile& profile);

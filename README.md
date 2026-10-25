@@ -183,6 +183,12 @@ target and obstacle Stop/PassThrough responses consume sorted contacts in order;
 source-body exclusion happens inside the physics query. A segment over 10000
 units or more than 32 contacts records an error and does not advance that
 projectile on the failed step. Combat still owns permission and damage rules.
+An optional `usePenetrationBudget`/`penetrationBudget` stage pair starts each
+emitter with a finite budget. The Host binds nonnegative cost to each exact
+collider with `setSurfaceResistance`; unmapped surfaces cost zero. On a
+PassThrough contact, enough remaining budget pays the cost and carries forward
+across fixed steps. Insufficient budget stops after the current target hit.
+Explicit Stop still stops. This does not infer thickness, exits or damage loss.
 
 `configureAreaSkill3D` connects a code-defined active Area skill to the
 source-following Jolt sphere or oriented-box provider. It validates query geometry and a

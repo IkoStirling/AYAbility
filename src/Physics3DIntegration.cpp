@@ -50,12 +50,20 @@ Result<void> Ability3DDeliverySystem::configure(const AuthoringDocument& documen
 void Ability3DDeliverySystem::bind(ayt::entity::World& world,AbilitySystem& ability,
         ayt::physics::PhysicsManager& physics) {
     _world=&world;_ability=&ability;_physics=&physics;
-    _projectiles.clear();_hitParts.clear();_errors.clear();
+    _projectiles.clear();_hitParts.clear();_surfaceResistance.clear();_errors.clear();
 }
 void Ability3DDeliverySystem::setHitPart(ayt::physics::ColliderHandle collider,std::uint32_t part) {
     if(!collider)return;
     if(part)_hitParts.insert_or_assign(collider,part);
     else _hitParts.erase(collider);
+}
+Result<void> Ability3DDeliverySystem::setSurfaceResistance(
+        ayt::physics::ColliderHandle collider,float cost) {
+    if(!collider || !std::isfinite(cost) || cost<0)
+        return invalid<void>("invalid 3D surface resistance");
+    if(cost==0)_surfaceResistance.erase(collider);
+    else _surfaceResistance.insert_or_assign(collider,cost);
+    return {};
 }
 ayt::entity::EntityHandle Ability3DDeliverySystem::target(ayt::physics::BodyHandle body) const {
     for(auto* entity:_world->getAllEntities()) {
@@ -121,7 +129,8 @@ void Ability3DDeliverySystem::onUpdate(float fixedSeconds) {
                 break;
             }
             _projectiles.insert_or_assign(command.emitter,
-                Projectile{std::move(command),profile->second,origin,sourceBody,0});
+                Projectile{std::move(command),profile->second,origin,sourceBody,0,
+                    profile->second.penetrationBudget});
         }
         for(auto it=_projectiles.begin();it!=_projectiles.end();) {
             if(!advanced.insert(it->first).second){++it;continue;}
@@ -181,6 +190,10 @@ void Ability3DDeliverySystem::onUpdate(float fixedSeconds) {
                             "3D multi-hit raycast query failed",{}});
                     } else {
                         for(const auto& hit:hits) {
+                            const float resistance=_surfaceResistance.contains(hit.collider)
+                                ? _surfaceResistance.at(hit.collider):0.0f;
+                            const bool resisted=projectile.profile.usePenetrationBudget
+                                && resistance>projectile.remainingPenetration;
                             auto candidate=target(hit.body);
                             const bool combatant=candidate.isValid() &&
                                 static_cast<bool>(ayt::combat::bindCombatant(*_world,candidate));
@@ -196,7 +209,10 @@ void Ability3DDeliverySystem::onUpdate(float fixedSeconds) {
                                 if(projectile.profile.target==CollisionResponse3D::Stop)finish=true;
                             } else if(projectile.profile.obstacle==CollisionResponse3D::Stop)
                                 finish=true;
+                            if(resisted)finish=true;
                             if(finish)break;
+                            if(projectile.profile.usePenetrationBudget)
+                                projectile.remainingPenetration-=resistance;
                         }
                         if(!finish)projectile.position=projectile.position+query.displacement;
                     }

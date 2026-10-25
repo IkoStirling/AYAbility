@@ -23,7 +23,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery2DProfile,velocity,spawn
     radius,layerMask,reverseAfterTicks,ignoreSource,obstacle,target)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery2DBinding,action,stage,profile)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery3DProfile,velocity,spawnOffset,
-    radius,layerMask,reverseAfterTicks,ignoreSource,obstacle,target)
+    radius,layerMask,reverseAfterTicks,ignoreSource,obstacle,target,
+    usePenetrationBudget,penetrationBudget)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Delivery3DBinding,action,stage,profile)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AreaSkill2DBinding,skill,effect,radius,
     offset,layerMask,includeSource,intent,allowed,requiredTag,requireSelected,
@@ -65,6 +66,7 @@ Result<void> validateDelivery3DProfile(const Delivery3DProfile& profile) {
     for(float value:profile.velocity)if(!std::isfinite(value))return invalid<void>("non-finite 3D velocity");
     for(float value:profile.spawnOffset)if(!std::isfinite(value))return invalid<void>("non-finite 3D offset");
     if(!std::isfinite(profile.radius) || profile.radius<0 || !profile.layerMask ||
+       !std::isfinite(profile.penetrationBudget) || profile.penetrationBudget<0 ||
        profile.obstacle>CollisionResponse3D::PassThrough ||
        profile.target>CollisionResponse3D::PassThrough)
         return invalid<void>("invalid 3D delivery profile");
