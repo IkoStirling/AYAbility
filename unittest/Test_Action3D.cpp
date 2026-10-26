@@ -110,6 +110,18 @@ TEST_CASE(fixed_action_and_two_combat_targets_publish_together) {
         && ledger.retainedRequests() == 0
         && out.frame.action == 99 && out.combat.empty());
     rejectSecond = false;
+    const ActionCombatPreflight staleWorld = [](std::span<const CombatBatchHit>)
+        -> ayt::combat::Result<void> {
+        return std::unexpected(ayt::combat::Diagnostic{ayt::combat::Error::Stale,
+            "target generation changed", {}});
+    };
+    CHECK_TRUE(stepAndSettleFixedAction3D(timeline, 1, before, query,
+        targets, relations, ledger, out, nullptr, staleWorld).error().code
+        == ayt::combat::Error::Stale);
+    CHECK_TRUE(timeline.checkpoint() == before
+        && first.read(statId("health"))->current == 100
+        && second.read(statId("health"))->current == 100
+        && ledger.retainedRequests() == 0);
     CHECK_TRUE(stepAndSettleFixedAction3D(timeline, 1, before, query, targets,
         relations, ledger, out).has_value());
     CHECK_TRUE(timeline.checkpoint().lastTick == 1
