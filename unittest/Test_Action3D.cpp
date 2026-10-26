@@ -67,6 +67,7 @@ TEST_CASE(fixed_action_and_two_combat_targets_publish_together) {
     HitLedger ledger;
     CHECK_TRUE(ledger.open({1, 1}, {HitScope::Segment}, 0, 100).has_value());
     bool rejectSecond = true;
+    bool wrongWindow = true;
     const ActionCombatHit3DFactory query = [&](const FixedActionFrame& frame)
         -> ayt::combat::Result<std::vector<CombatBatchHit>> {
         std::vector<CombatBatchHit> hits;
@@ -75,7 +76,7 @@ TEST_CASE(fixed_action_and_two_combat_targets_publish_together) {
             const auto& state = i == 0 ? first : second;
             SettlementRequest request;
             request.hit = {{1, 1}, i + 1, target, 1, 0,
-                           frame.hitWindows[i].id};
+                           i == 1 && wrongWindow ? 999u : frame.hitWindows[i].id};
             request.source.instigator = source;
             request.source.team = 10;
             request.source.ability = 1;
@@ -97,8 +98,11 @@ TEST_CASE(fixed_action_and_two_combat_targets_publish_together) {
     ++stale.lastTick;
     CHECK_TRUE(stepAndSettleFixedAction3D(timeline, 1, stale, query, targets,
         relations, ledger, out).error().code == ayt::combat::Error::Stale);
-    CHECK_TRUE(!stepAndSettleFixedAction3D(timeline, 1, before, query, targets,
-        relations, ledger, out).has_value());
+    CHECK_TRUE(stepAndSettleFixedAction3D(timeline, 1, before, query, targets,
+        relations, ledger, out).error().code == ayt::combat::Error::Invalid);
+    wrongWindow = false;
+    CHECK_TRUE(!stepAndSettleFixedAction3D(timeline, 1, before, query,
+        targets, relations, ledger, out).has_value());
     CHECK_TRUE(timeline.checkpoint().lastTick == before.lastTick
         && timeline.checkpoint().action == before.action
         && first.read(statId("health"))->current == 100
