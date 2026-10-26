@@ -93,7 +93,11 @@ TEST_CASE(fixed_action_and_two_combat_targets_publish_together) {
     };
     ActionCombatBatch3DResult out;
     out.frame.action = 99;
-    CHECK_TRUE(!stepAndSettleFixedAction3D(timeline, 1, query, targets,
+    auto stale = before;
+    ++stale.lastTick;
+    CHECK_TRUE(stepAndSettleFixedAction3D(timeline, 1, stale, query, targets,
+        relations, ledger, out).error().code == ayt::combat::Error::Stale);
+    CHECK_TRUE(!stepAndSettleFixedAction3D(timeline, 1, before, query, targets,
         relations, ledger, out).has_value());
     CHECK_TRUE(timeline.checkpoint().lastTick == before.lastTick
         && timeline.checkpoint().action == before.action
@@ -102,7 +106,7 @@ TEST_CASE(fixed_action_and_two_combat_targets_publish_together) {
         && ledger.retainedRequests() == 0
         && out.frame.action == 99 && out.combat.empty());
     rejectSecond = false;
-    CHECK_TRUE(stepAndSettleFixedAction3D(timeline, 1, query, targets,
+    CHECK_TRUE(stepAndSettleFixedAction3D(timeline, 1, before, query, targets,
         relations, ledger, out).has_value());
     CHECK_TRUE(timeline.checkpoint().lastTick == 1
         && out.frame.execution == 11 && out.combat.size() == 2

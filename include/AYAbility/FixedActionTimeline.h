@@ -67,6 +67,7 @@ struct FixedActionSnapshot {
     Id action=0, bufferedAction=0;
     std::uint64_t execution=0, startTick=0, bufferedTick=0;
     FixedActionPhase lastPhase=FixedActionPhase::Idle;
+    bool operator==(const FixedActionSnapshot&) const = default;
 };
 
 /// A single actor's data-only fixed-tick phase clock. It does not charge

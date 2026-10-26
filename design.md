@@ -74,6 +74,8 @@ match tick, execution and active window segment, and restores the checkpoint
 on query/settlement failure. This avoids copying the definition map each
 fixed tick. Root motion, World notifications and persistence remain separate
 host publications.
+The expected-checkpoint overload detects any timeline mutation between
+preview and commit; a non-previewed caller can use the convenience overload.
 
 `FixedActionDocument` is the optional authoring edge for the same data clock:
 version-1 JSON contains bounded numeric action IDs, durations, input-buffer

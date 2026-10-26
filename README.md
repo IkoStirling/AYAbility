@@ -60,6 +60,8 @@ each request must carry that tick, execution and window ID. Query or Combat
 failure restores the previous timeline checkpoint as well as leaving Combat
 owners unchanged. Animation, physical movement and Entity publication are
 still the game's responsibility.
+For a previewed frame, pass its pre-preview `FixedActionSnapshot` to the
+combined adapter; a changed timeline is rejected before the hit query.
 Buffered input is only intent and is charged when the host
 starts its next action. The host still owns Entity mapping, animation, movement
 and hit settlement. Each `step(tick)` advances exactly one fixed tick.
