@@ -20,6 +20,33 @@ FixedActionTimeline timeline() {
 }
 
 TEST_SUITE(FixedActionTimelineTests)
+TEST_CASE(preview_reports_the_next_frame_without_advancing_the_clock) {
+    auto actions = timeline();
+    CHECK_TRUE(actions.start(10, 91, 1).has_value());
+    const auto before = actions.checkpoint();
+    const auto firstPreview = actions.previewStep(1);
+    CHECK_TRUE(firstPreview.has_value());
+    CHECK_TRUE(firstPreview->phase == FixedActionPhase::Windup
+        && firstPreview->cues.size() == 1);
+    CHECK_TRUE(actions.checkpoint().lastTick == before.lastTick
+        && actions.checkpoint().action == before.action);
+    const auto firstCommit = actions.step(1);
+    CHECK_TRUE(firstCommit.has_value());
+    CHECK_TRUE(firstCommit->phase == firstPreview->phase
+        && firstCommit->cues.size() == firstPreview->cues.size());
+    CHECK_TRUE(!actions.previewStep(1).has_value());
+    CHECK_TRUE(actions.previewStep(2)->cues.back().marker == 11);
+    CHECK_TRUE(actions.step(2)->cues.back().marker == 11);
+    CHECK_TRUE(actions.step(3).has_value());
+    const auto finalPreview = actions.previewStep(4);
+    CHECK_TRUE(finalPreview.has_value()
+        && finalPreview->cues.back().kind == FixedActionCueKind::Finished);
+    CHECK_TRUE(actions.running() && actions.checkpoint().lastTick == 3);
+    const auto finalCommit = actions.step(4);
+    CHECK_TRUE(finalCommit.has_value()
+        && finalCommit->cues.back().kind == FixedActionCueKind::Finished);
+    CHECK_TRUE(!actions.running() && actions.checkpoint().lastTick == 4);
+}
 TEST_CASE(authored_document_roundtrips_and_compiles_to_stable_timeline) {
     FixedActionDocument authored;
     authored.actions = {{.id=30,.windupTicks=1,.activeTicks=2,

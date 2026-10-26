@@ -62,6 +62,18 @@ Combat ledger use these values; `HitScope::Segment` can isolate per-channel
 target deduplication within a host-managed attack interval. The timeline neither samples geometry nor
 mutates HP. A cancelled action requires the host to close its open ledger.
 Only nonempty hit-window data enters the fingerprint, preserving legacy saves.
+`previewStep` computes the same next frame without mutation; `step` now
+publishes only after that frame is fully built. A single-owner host can
+preview cues, evaluate animation and finish physics, then commit the same
+tick through `step` or the Combat bridge. Mutating the timeline between
+preview and commit invalidates the prepared frame.
+The optional `AYCombat/Action3DBatch.h` bridge can put a timeline step and
+the low-level Combat multi-target batch on one value-state commit boundary.
+It records the small pointer-free checkpoint, requires the game's query to
+match tick, execution and active window segment, and restores the checkpoint
+on query/settlement failure. This avoids copying the definition map each
+fixed tick. Root motion, World notifications and persistence remain separate
+host publications.
 
 `FixedActionDocument` is the optional authoring edge for the same data clock:
 version-1 JSON contains bounded numeric action IDs, durations, input-buffer

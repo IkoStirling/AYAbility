@@ -91,6 +91,11 @@ public:
     /// the new action's first frame. Invalid transitions leave state intact.
     Result<FixedActionCue> transition(Id nextAction, std::uint64_t execution,
                                       std::uint64_t tick);
+    /// Compute this tick's cues and hit windows without advancing the clock.
+    /// The single-owner host can prepare animation/physics from this frame,
+    /// then call step or a combined Combat adapter at the commit boundary.
+    /// No timeline mutation may intervene between preview and commit.
+    Result<FixedActionFrame> previewStep(std::uint64_t tick) const;
     /// Advance exactly one fixed tick; skipped or repeated ticks are rejected.
     Result<FixedActionFrame> step(std::uint64_t tick);
     /// Stop before the next step. The returned cue lets the host stop animation

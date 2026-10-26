@@ -213,7 +213,7 @@ Result<FixedActionCue> FixedActionTimeline::transition(
     return cue;
 }
 
-Result<FixedActionFrame> FixedActionTimeline::step(std::uint64_t tick) {
+Result<FixedActionFrame> FixedActionTimeline::previewStep(std::uint64_t tick) const {
     if (_lastTick==std::numeric_limits<std::uint64_t>::max() || tick!=_lastTick+1)
         return fail<FixedActionFrame>(Error::Stale,"fixed action tick out of order");
     FixedActionFrame frame;
@@ -237,11 +237,22 @@ Result<FixedActionFrame> FixedActionTimeline::step(std::uint64_t tick) {
             if (offset>=window.startOffset && offset<window.endOffset)
                 frame.hitWindows.push_back({window.id,
                     _startTick+window.startOffset,_startTick+window.endOffset});
-        _lastPhase=frame.phase;
         if (offset+1==total) {
             frame.cues.push_back({FixedActionCueKind::Finished,frame.phase,
                 _action,0,_execution,tick});
             frame.readyBufferedAction=_bufferedAction;
+        }
+    }
+    return frame;
+}
+
+Result<FixedActionFrame> FixedActionTimeline::step(std::uint64_t tick) {
+    auto preview = previewStep(tick);
+    if (!preview) return preview;
+    if (_action) {
+        _lastPhase = preview->phase;
+        if (!preview->cues.empty()
+            && preview->cues.back().kind == FixedActionCueKind::Finished) {
             _action=0;
             _execution=0;
             _startTick=0;
@@ -251,7 +262,7 @@ Result<FixedActionFrame> FixedActionTimeline::step(std::uint64_t tick) {
         }
     }
     _lastTick=tick;
-    return frame;
+    return preview;
 }
 
 Result<FixedActionCue> FixedActionTimeline::cancel(std::uint64_t tick,bool interrupted) {

@@ -49,6 +49,17 @@ host uses those bounds to authorize physics queries and can use the ID as a
 Combat `HitScope::Segment` for per-channel target deduplication. The host owns
 one ledger interval covering its chosen action span. Windows enter the content fingerprint only when present, so
 older definitions and checkpoints remain compatible.
+`previewStep(tick)` exposes the same next-frame cues and hit windows without
+advancing time, so animation and collision can prepare their completed pose
+before the final `step` or combined Combat settlement. Keep this actor's
+timeline unchanged between preview and commit.
+When the game also links `AYCombat::Stats`, optional
+`AYCombat/Action3DBatch.h` advances a timeline tick and settles up to 64
+ordered hits together. Its pure query runs only for active authored windows;
+each request must carry that tick, execution and window ID. Query or Combat
+failure restores the previous timeline checkpoint as well as leaving Combat
+owners unchanged. Animation, physical movement and Entity publication are
+still the game's responsibility.
 Buffered input is only intent and is charged when the host
 starts its next action. The host still owns Entity mapping, animation, movement
 and hit settlement. Each `step(tick)` advances exactly one fixed tick.
