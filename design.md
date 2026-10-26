@@ -146,8 +146,12 @@ Optional authored penetration budget is copied into each emitter on spawn.
 `setSurfaceResistance` supplies a mutable exact-collider cost map cleared on
 rebind. Each sorted contact settles Combat first; a PassThrough then consumes
 its cost, or ends the emitter when the remaining budget is insufficient.
-Unmapped colliders cost zero, and an explicit Stop has priority. No material
-classification or thickness model is imposed on game content.
+Unmapped colliders cost zero, and an explicit Stop has priority. An optional
+`SurfaceMedium3D` profile replaces the fixed cost for one exact collider. A
+pure planner validates thickness/resistance and estimates cost from authored
+thickness divided by clamped absolute incidence cosine. The latest successful
+fixed-cost or medium binding wins; invalid updates are transactional. This is
+an author-controlled approximation, not a geometry exit or material lookup.
 The 3D adapter maps them through `setHitPart(collider, part)` before reporting
 the contact to Combat, matching the 2D path. Zero erases a mapping; `bind`
 clears it, and a newly generated collider does not inherit an old mapping.

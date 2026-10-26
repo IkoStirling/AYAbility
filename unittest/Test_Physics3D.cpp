@@ -153,7 +153,8 @@ TEST_CASE(jolt_contact_reports_to_ability_and_combat) {
     CHECK_TRUE(delivery->errors().empty());
     CHECK_FALSE(delivery->setSurfaceResistance(shape,-1).has_value());
     CHECK_TRUE(delivery->setSurfaceResistance(obstacleCollider,2).has_value());
-    CHECK_TRUE(delivery->setSurfaceResistance(shape,3).has_value());
+    CHECK_FALSE(delivery->setSurfaceMedium(shape,SurfaceMedium3D{-1,3}).has_value());
+    CHECK_TRUE(delivery->setSurfaceMedium(shape,SurfaceMedium3D{1,3}).has_value());
     CHECK_TRUE(delivery->setSurfaceResistance(secondTargetCollider,5).has_value());
     deliveryProfile.usePenetrationBudget=true;
     deliveryProfile.penetrationBudget=4;

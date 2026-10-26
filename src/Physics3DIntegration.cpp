@@ -50,7 +50,8 @@ Result<void> Ability3DDeliverySystem::configure(const AuthoringDocument& documen
 void Ability3DDeliverySystem::bind(ayt::entity::World& world,AbilitySystem& ability,
         ayt::physics::PhysicsManager& physics) {
     _world=&world;_ability=&ability;_physics=&physics;
-    _projectiles.clear();_hitParts.clear();_surfaceResistance.clear();_errors.clear();
+    _projectiles.clear();_hitParts.clear();_surfaceResistance.clear();
+    _surfaceMedia.clear();_errors.clear();
 }
 void Ability3DDeliverySystem::setHitPart(ayt::physics::ColliderHandle collider,std::uint32_t part) {
     if(!collider)return;
@@ -63,7 +64,21 @@ Result<void> Ability3DDeliverySystem::setSurfaceResistance(
         return invalid<void>("invalid 3D surface resistance");
     if(cost==0)_surfaceResistance.erase(collider);
     else _surfaceResistance.insert_or_assign(collider,cost);
+    _surfaceMedia.erase(collider);
     return {};
+}
+Result<void> Ability3DDeliverySystem::setSurfaceMedium(
+        ayt::physics::ColliderHandle collider,const SurfaceMedium3D& medium) {
+    if(!collider)return invalid<void>("invalid 3D surface collider");
+    if(auto checked=planSurfacePenetration3D({1,0,0},{-1,0,0},medium,0);!checked)
+        return std::unexpected(checked.error());
+    _surfaceMedia.insert_or_assign(collider,medium);
+    _surfaceResistance.erase(collider);
+    return {};
+}
+void Ability3DDeliverySystem::clearSurfaceMedium(
+        ayt::physics::ColliderHandle collider) {
+    _surfaceMedia.erase(collider);
 }
 ayt::entity::EntityHandle Ability3DDeliverySystem::target(ayt::physics::BodyHandle body) const {
     for(auto* entity:_world->getAllEntities()) {
@@ -190,8 +205,23 @@ void Ability3DDeliverySystem::onUpdate(float fixedSeconds) {
                             "3D multi-hit raycast query failed",{}});
                     } else {
                         for(const auto& hit:hits) {
-                            const float resistance=_surfaceResistance.contains(hit.collider)
+                            float resistance=_surfaceResistance.contains(hit.collider)
                                 ? _surfaceResistance.at(hit.collider):0.0f;
+                            if(projectile.profile.usePenetrationBudget) {
+                                if(const auto medium=_surfaceMedia.find(hit.collider);
+                                    medium!=_surfaceMedia.end()) {
+                                    const auto planned=planSurfacePenetration3D(
+                                        {query.displacement.x,query.displacement.y,query.displacement.z},
+                                        {hit.normal.x,hit.normal.y,hit.normal.z},
+                                        medium->second,projectile.remainingPenetration);
+                                    if(!planned) {
+                                        _errors.push_back(planned.error());
+                                        finish=true;
+                                        break;
+                                    }
+                                    resistance=planned->cost;
+                                }
+                            }
                             const bool resisted=projectile.profile.usePenetrationBudget
                                 && resistance>projectile.remainingPenetration;
                             auto candidate=target(hit.body);

@@ -1,6 +1,7 @@
 #pragma once
 #include <AYAbility/EntityIntegration.h>
 #include <AYAbility/Authoring.h>
+#include <AYAbility/SurfaceMedium3D.h>
 #include <AYPhysics/PhysicsManager.h>
 #include <AYCombat/Physics3DArea.h>
 #include <AYMath/MathTypes.h>
@@ -25,6 +26,12 @@ public:
     /// Bind a finite nonnegative cost for passing one collider surface. Zero
     /// removes the mapping; bindings are cleared on World/physics rebind.
     Result<void> setSurfaceResistance(ayt::physics::ColliderHandle collider,float cost);
+    /// Bind an authored thickness and resistance to an exact collider. The
+    /// current hit normal estimates the travel path; no exit geometry is inferred.
+    /// A successful bind replaces any fixed resistance for that collider.
+    Result<void> setSurfaceMedium(ayt::physics::ColliderHandle collider,
+        const SurfaceMedium3D& medium);
+    void clearSurfaceMedium(ayt::physics::ColliderHandle collider);
     const std::vector<Diagnostic>& errors() const noexcept { return _errors; }
 private:
     struct Projectile {
@@ -43,6 +50,7 @@ private:
     std::map<Identity,Projectile> _projectiles;
     std::map<ayt::physics::ColliderHandle,std::uint32_t> _hitParts;
     std::map<ayt::physics::ColliderHandle,float> _surfaceResistance;
+    std::map<ayt::physics::ColliderHandle,SurfaceMedium3D> _surfaceMedia;
     std::vector<Diagnostic> _errors;
 };
 /// Install one delivery dimension per World. Keep PhysicsManager alive through shutdown.

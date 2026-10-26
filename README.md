@@ -201,7 +201,13 @@ emitter with a finite budget. The Host binds nonnegative cost to each exact
 collider with `setSurfaceResistance`; unmapped surfaces cost zero. On a
 PassThrough contact, enough remaining budget pays the cost and carries forward
 across fixed steps. Insufficient budget stops after the current target hit.
-Explicit Stop still stops. This does not infer thickness, exits or damage loss.
+An authored `SurfaceMedium3D` may instead be bound with `setSurfaceMedium`.
+It estimates traveled thickness as configured thickness divided by the
+absolute incidence cosine (clamped for grazing hits), then charges fixed plus
+per-unit resistance. The most recent fixed-cost or medium binding wins for an
+exact collider. Invalid bindings leave the previous setting untouched; rebind
+clears both maps. Explicit Stop still stops. The normal is an entry-contact
+approximation: no exit point, ricochet, material lookup or damage loss is inferred.
 
 `configureAreaSkill3D` connects a code-defined active Area skill to the
 source-following Jolt sphere or oriented-box provider. It validates query geometry and a
